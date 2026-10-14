@@ -139,7 +139,7 @@ namespace LabelMaker.Core.Pipeline
             return FromApply(applied, null, string.Empty);
         }
 
-        private static ProcessOutcome FromApply(ApplyResult applied, MatchSummary? summary, string destination)
+        internal static ProcessOutcome FromApply(ApplyResult applied, MatchSummary? summary, string destination)
         {
             switch (applied.State)
             {
@@ -154,7 +154,7 @@ namespace LabelMaker.Core.Pipeline
 
         private static ProcessOutcome Failed(string reason) => new ProcessOutcome { State = QueueState.Failed, Reason = reason };
 
-        private static PlannerOptions CopyWithoutCover(PlannerOptions source)
+        internal static PlannerOptions CopyWithoutCover(PlannerOptions source)
         {
             var copy = new PlannerOptions { NamingScript = source.NamingScript, MaxPathLength = source.MaxPathLength, ReuseExistingFolders = source.ReuseExistingFolders, MoveCover = false };
             copy.TrackSidecarExtensions.Clear();

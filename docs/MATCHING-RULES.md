@@ -89,7 +89,7 @@ albums that landed on the right album with the right song titles in the right pl
 questions with no visible difference between the answers.
 
 ## 7. When Label Maker cannot decide (and what you can do)
-Status: the matching and these sentences are built. The review screen, the automatic retries and the "keep both" choices below are designed but **not built yet** (they come with the plugin shell and the review screen); until then an album that is not applied simply stays in the inbox untouched.
+Status: the matching, these sentences and the review actions (see "What you can do about it" below) are built in the engine. The review screen that shows them, the automatic retries and the "keep both" choices are designed but **not built yet** (they come with the plugin shell and the review screen); until then an album that is not applied simply stays in the inbox untouched.
 
 The plain sentences you will see, and what each means:
 
@@ -109,7 +109,20 @@ The plain sentences you will see, and what each means:
 | "The path ... is N characters long." | The new file path would be too long for Windows. | Shorten a name or accept a shorter naming pattern. |
 | "MusicBrainz could not be reached" / "stayed busy" | Not a match problem: the service is down or busy. | Nothing. The album is retried automatically and never counted as "no match". |
 
-In the review screen (not built yet) you will be able to: choose another edition with one tap, search by album and artist, **paste a MusicBrainz link or id**, **approve** the suggestion, **keep your own tags and file it** (moved and renamed from the tags you already have, with no MusicBrainz lookup), **skip for now**, or send it to the trash folder.
+### What you can do about it (the review actions; the screen that shows them comes with the plugin)
+Every action below is checked first and refused, with a plain sentence, if it would be unsafe. An album that is being checked or filed at that moment cannot be touched, and an album that is already filed has to be undone first.
+
+- **Look before you choose ("preview").** Shows which MusicBrainz edition you are about to use, how well each of your files fits it, where each file would go in your library and anything that would stop it. Nothing changes.
+- **Choose another edition ("apply").** Tags your files from the edition you picked and files them. Your tap means yes, so this really happens even when Label Maker as a whole is still in "dry run" mode (dry run only governs what Label Maker does by itself). The same safety checks as an automatic apply run first: every file needs a track, no two files may get the same name, nothing may land outside the library, and paths must not be too long.
+- **Search by hand.** Type an artist and an album; Label Maker searches MusicBrainz and shows each edition with a score for how well your files fit it.
+- **Paste a MusicBrainz link or id.** A link to a release page (one edition), a release group page (the album as a whole: its editions are listed) or just the long id. Anything else is refused with a sentence telling you what to paste.
+- **Say which track a file is ("mapping").** If one file does not fit (a bonus track, a mislabeled file), you can tell Label Maker "this file is disc 1, track 7". Files you place yourself are never counted as a poor fit; the other files are matched to the tracks that are left. A mapping that names a track that does not exist, or gives two files the same track, is refused.
+- **Keep my tags and file it.** For music MusicBrainz does not have. Label Maker does not change a single tag and does not look anything up; it only moves and renames the files using the tags you already have (the same naming pattern as everything else). Every file needs a title, an album and an artist, and no two files may share a track number on a disc. A MusicBrainz id already in the tags is kept.
+- **Skip for now.** The album stays in the inbox untouched. Even if its files change, Label Maker leaves it alone until you choose "check again". The same hold applies after an undo, so an album you undid is never redone behind your back.
+- **Check again.** Puts the album back in line for a fresh look on the next pass (use it after fixing files by hand).
+- **Discard.** Moves the album's files into a `_Trash` folder inside the inbox (in a dated folder of its own with a list of where every file came from). **Nothing is ever deleted by Label Maker.** Label Maker ignores folders that start with an underscore, so a discarded album is not picked up again. Emptied inbox folders are tidied away.
+- **Restore.** Moves a discarded album back to exactly where it was, then waits for your decision. If a file with the same name has since appeared in that place, nothing is restored and you are told why.
+- **Undo.** For an album that was filed: puts every file back in the inbox with its old tags and names (and the cover and lyric files that moved with it), and leaves the album waiting for your decision.
 
 ## 7b. Situations Label Maker has not been tested on yet
 Some kinds of albums were not part of the test: files with no MusicBrainz id to check against, MusicGrabber's own "Singles" folders, classical music, several albums mixed in one folder, and files whose tags disagree with each other. The rule for all of them is the same: **until it has been measured on your real downloads, Label Maker asks you instead of acting.**

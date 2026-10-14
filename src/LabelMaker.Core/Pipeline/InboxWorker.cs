@@ -94,6 +94,13 @@ namespace LabelMaker.Core.Pipeline
                     }
                     else if (item.Fingerprint != unit.Fingerprint && item.State != QueueState.Applying)
                     {
+                        if (item.Held)
+                        {
+                            // A person decided about this album: new or changed files are noted, but nothing is reprocessed until they ask.
+                            Describe(item, unit, now);
+                            Touch(item, now);
+                            continue;
+                        }
                         // New or changed files: whatever was decided no longer holds.
                         Describe(item, unit, now);
                         item.State = QueueState.Waiting;

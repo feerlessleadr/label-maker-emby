@@ -84,6 +84,12 @@ namespace LabelMaker.Core.Pipeline
 
         /// <summary>Dry run and done: the library folder the album went (or would go) to.</summary>
         public string Destination { get; set; } = string.Empty;
+
+        /// <summary>True after a person decided something (skipped it, undid it, discarded it): the album is left alone, even if its files change, until someone chooses "check again".</summary>
+        public bool Held { get; set; }
+
+        /// <summary>After "discard": the folder under the inbox's _Trash that holds the files, with a restore.json that lists where each one came from.</summary>
+        public string TrashPath { get; set; } = string.Empty;
     }
 
     /// <summary>

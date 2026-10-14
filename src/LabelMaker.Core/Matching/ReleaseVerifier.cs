@@ -68,7 +68,16 @@ namespace LabelMaker.Core.Matching
         private const double AlbumShare = 0.20;
         private const double ArtistShare = 0.15;
 
-        public static ReleaseVerification Verify(ReleaseInfo release, IReadOnlyList<AlbumFile> files, double minFileScore = 0.5)
+        public static ReleaseVerification Verify(ReleaseInfo release, IReadOnlyList<AlbumFile> files, double minFileScore = 0.5) =>
+            VerifyWithMapping(release, files, null, minFileScore);
+
+        /// <summary>
+        /// Like <see cref="Verify"/>, but a person has said which track some files are (the mapping editor): those files take the track
+        /// they were given (keyed by file path, to a disc and a position on it), and the rest are paired with what is left. A file
+        /// a person placed is never counted as weak. Throws <see cref="ArgumentException"/> with a plain message when the mapping names a track
+        /// that is not on the release, or two files the same track.
+        /// </summary>
+        public static ReleaseVerification VerifyWithMapping(ReleaseInfo release, IReadOnlyList<AlbumFile> files, IReadOnlyDictionary<string, (int Disc, int Position)>? forced, double minFileScore = 0.5)
         {
             var slots = new List<(int Disc, RecordingInfo Track)>();
             foreach (var medium in release.Media)
@@ -82,11 +91,39 @@ namespace LabelMaker.Core.Matching
                 for (int j = 0; j < slots.Count; j++) scores[i, j] = TrackScore(files[i].Tags, slots[j].Disc, slots[j].Track);
             }
 
-            var pairing = AssignmentSolver.MaximiseScore(scores);
+            var chosenSlot = new int[files.Count];
+            var placed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var usedSlots = new HashSet<int>();
+            for (int i = 0; i < files.Count; i++)
+            {
+                chosenSlot[i] = -1;
+                if (forced == null || !forced.TryGetValue(files[i].Path, out var wanted)) continue;
+                int slot = slots.FindIndex(s => s.Disc == wanted.Disc && s.Track.Position == wanted.Position);
+                var name = System.IO.Path.GetFileName(files[i].Path);
+                if (slot < 0) throw new ArgumentException($"\"{name}\" was placed on disc {wanted.Disc}, track {wanted.Position}, which is not on this release.");
+                if (!usedSlots.Add(slot)) throw new ArgumentException($"Two files were placed on disc {wanted.Disc}, track {wanted.Position}.");
+                chosenSlot[i] = slot;
+                placed.Add(files[i].Path);
+            }
+
+            // The files nobody placed share the tracks nobody took.
+            var freeFiles = Enumerable.Range(0, files.Count).Where(i => chosenSlot[i] < 0).ToList();
+            var freeSlots = Enumerable.Range(0, slots.Count).Where(j => !usedSlots.Contains(j)).ToList();
+            if (freeFiles.Count > 0)
+            {
+                var sub = new double[freeFiles.Count, freeSlots.Count];
+                for (int a = 0; a < freeFiles.Count; a++)
+                {
+                    for (int b = 0; b < freeSlots.Count; b++) sub[a, b] = scores[freeFiles[a], freeSlots[b]];
+                }
+                var pairing = AssignmentSolver.MaximiseScore(sub);
+                for (int a = 0; a < freeFiles.Count; a++) chosenSlot[freeFiles[a]] = pairing[a] < 0 ? -1 : freeSlots[pairing[a]];
+            }
+
             var assignments = new List<FileAssignment>();
             for (int i = 0; i < files.Count; i++)
             {
-                int j = pairing[i];
+                int j = chosenSlot[i];
                 assignments.Add(j < 0
                     ? new FileAssignment { File = files[i], Score = 0 }
                     : new FileAssignment { File = files[i], Disc = slots[j].Disc, Track = slots[j].Track, Score = scores[i, j] });
@@ -94,7 +131,7 @@ namespace LabelMaker.Core.Matching
 
             double average = assignments.Count == 0 ? 0 : assignments.Average(a => a.Score);
             double lowest = assignments.Count == 0 ? 0 : assignments.Min(a => a.Score);
-            int weak = assignments.Count(a => a.Track == null || a.Score < minFileScore);
+            int weak = assignments.Count(a => a.Track == null || (a.Score < minFileScore && !placed.Contains(a.File.Path)));
 
             return new ReleaseVerification
             {
