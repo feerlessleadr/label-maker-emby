@@ -6,7 +6,7 @@ administrator websocket, and then removes everything it made and puts the server
   powershell -ExecutionPolicy Bypass -File tools\Test-LabelMakerPlugin.ps1 [-DllPath <path>] [-KeepRunning]
 
 Needs: the admin API key in %USERPROFILE%\.emby-spike-key (never printed), network access to musicbrainz.org.
-Never touches the real users (kevin, test1). Exit code 0 only when every check passed.
+Never touches the server's existing users: it creates one throw-away administrator and deletes it. Exit code 0 only when every check passed.
 #>
 param(
   [string]$DllPath = '',
