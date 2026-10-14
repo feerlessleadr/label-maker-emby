@@ -40,6 +40,9 @@ jobs:
           dotnet restore src/LabelMaker --locked-mode
           dotnet build src/LabelMaker -c Release --no-restore
 
+      - name: Check that the plugin page script parses
+        run: node --check src/LabelMaker/LabelMaker.LabelMakerConfiguration.js
+
       - name: Run the unit tests
         run: dotnet test tests/LabelMaker.Tests
 

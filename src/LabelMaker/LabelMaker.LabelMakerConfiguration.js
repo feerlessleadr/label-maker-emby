@@ -1,13 +1,4 @@
-            }).catch((e) => {
-                loading.hide();
-                const show = (detail) => {
-                    const text = detail || 'The settings were not saved. Check the values.';
-                    toast({ type: 'error', text: text });
-                    q('#lmSaveNote').textContent = text;
-                };
-                // Emby hands back the failed response; the server's sentence is its body.
-                if (e && typeof e.text === 'function') { e.text().then((t) => show(this.errorText(t))).catch(() => show('')); } else { show(''); }
-            });define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-select', 'emby-checkbox', 'emby-textarea'], function (BaseView, loading, toast) {
+define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-select', 'emby-checkbox', 'emby-textarea'], function (BaseView, loading, toast) {
     'use strict';
 
     const pluginId = 'a29bf822-41ab-4e14-a814-a8d386e7f745';
@@ -64,6 +55,7 @@
             this.laneRows = [];
             this.openAlbum = null;
             this.pollTimer = null;
+            this.findToken = 0;
             const q = (s) => view.querySelector(s);
 
             q('.localnav').addEventListener('click', (e) => {
@@ -364,19 +356,21 @@
 
         search(artist, album) {
             const id = this.openAlbum.Id;
+            const token = ++this.findToken; // an older answer that arrives late must not replace a newer one
             loading.show();
             postJson('LabelMaker/Albums/' + encodeURIComponent(id) + '/Search', { Artist: artist, Album: album }).then((r) => {
                 loading.hide();
-                this.showCandidates(r);
+                if (token === this.findToken) { this.showCandidates(r); }
             }).catch(() => { loading.hide(); toast({ type: 'error', text: 'The search did not finish.' }); });
         }
 
         resolve(text) {
             const id = this.openAlbum.Id;
+            const token = ++this.findToken;
             loading.show();
             postJson('LabelMaker/Albums/' + encodeURIComponent(id) + '/Resolve', { Text: text }).then((r) => {
                 loading.hide();
-                this.showCandidates(r);
+                if (token === this.findToken) { this.showCandidates(r); }
             }).catch(() => { loading.hide(); toast({ type: 'error', text: 'The lookup did not finish.' }); });
         }
 
@@ -592,9 +586,13 @@
                 this.loadSettings('Saved. Use "Check the folders" on the Dashboard to test the lanes.');
             }).catch((e) => {
                 loading.hide();
-                const detail = e && e.responseText ? this.errorText(e.responseText) : '';
-                toast({ type: 'error', text: detail || 'The settings were not saved. Check the values.' });
-                q('#lmSaveNote').textContent = detail || 'The settings were not saved. Check the values.';
+                const show = (detail) => {
+                    const text = detail || 'The settings were not saved. Check the values.';
+                    toast({ type: 'error', text: text });
+                    q('#lmSaveNote').textContent = text;
+                };
+                // Emby hands back the failed response; the server's sentence is its body.
+                if (e && typeof e.text === 'function') { e.text().then((t) => show(this.errorText(t))).catch(() => show('')); } else { show(''); }
             });
         }
 

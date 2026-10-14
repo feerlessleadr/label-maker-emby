@@ -26,5 +26,9 @@ jobs:
           dotnet restore src/LabelMaker --locked-mode
           dotnet build src/LabelMaker -c Release --no-restore
 
+      - name: Check that the plugin page script parses
+        # A script error makes the page silently refuse to open in Emby, which no engine test can see.
+        run: node --check src/LabelMaker/LabelMaker.LabelMakerConfiguration.js
+
       - name: Run the unit tests
         run: dotnet test tests/LabelMaker.Tests

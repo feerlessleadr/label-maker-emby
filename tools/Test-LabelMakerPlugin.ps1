@@ -133,6 +133,14 @@ try {
   Check 'Status has the counts, lanes, service and LatestSeq' ($st.Counts -and $st.Service.MusicBrainz -eq 'Ok' -and $st.LatestSeq -ne $null -and $st.MatchingVersion)
   $page = Invoke-WebRequest -UseBasicParsing -Headers $H "$base/web/configurationpage?name=LabelMakerConfiguration"
   Check 'The settings page is served' ($page.Content -match 'Label Maker')
+  # The exact script and markup the plugin serves, loaded in a real browser: a script error here is the "menu item does nothing" failure.
+  $served = Join-Path $env:TEMP ('lm-served-' + [Guid]::NewGuid().ToString('N').Substring(0, 6))
+  New-Item -ItemType Directory -Force $served | Out-Null
+  Invoke-WebRequest -UseBasicParsing -Headers $H "$base/web/configurationpage?name=LabelMakerConfigurationjs" -OutFile (Join-Path $served 'page.js')
+  Invoke-WebRequest -UseBasicParsing -Headers $H "$base/web/configurationpage?name=LabelMakerConfiguration" -OutFile (Join-Path $served 'page.html')
+  $pageOut = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Check-PageScript.ps1') -ScriptPath (Join-Path $served 'page.js') -HtmlPath (Join-Path $served 'page.html') 2>&1 | Out-String
+  Check 'The page script the plugin serves loads in a real browser without errors' ($LASTEXITCODE -eq 0) $pageOut.Trim()
+  Remove-Item -Recurse -Force $served -ErrorAction SilentlyContinue
   $anon = $false; try { Invoke-RestMethod "$base/LabelMaker/Status" | Out-Null } catch { $anon = $true }
   Check 'A request with no token is refused' $anon
 
