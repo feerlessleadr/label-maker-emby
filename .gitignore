@@ -8,3 +8,4 @@ samples/
 # Local-only notes and the owner's Picard.ini (private paths and settings): never commit
 docs/local/
 Picard.ini
+library-tags*.json
