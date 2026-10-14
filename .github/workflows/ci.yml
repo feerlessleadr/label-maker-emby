@@ -21,5 +21,10 @@ jobs:
           dotnet restore src/LabelMaker.Core --locked-mode
           dotnet build src/LabelMaker.Core -c Release --no-restore
 
+      - name: Restore and build the plugin
+        run: |
+          dotnet restore src/LabelMaker --locked-mode
+          dotnet build src/LabelMaker -c Release --no-restore
+
       - name: Run the unit tests
         run: dotnet test tests/LabelMaker.Tests

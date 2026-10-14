@@ -83,6 +83,11 @@ namespace LabelMaker.Core.Pipeline
         public MatchSummary? Match { get; set; }
 
         /// <summary>Dry run and done: the library folder the album went (or would go) to.</summary>
+        /// <summary>What the files themselves say (most common tag values), for the review list and alerts. Empty until the album was looked at.</summary>
+        public string Artist { get; set; } = string.Empty;
+
+        public string Album { get; set; } = string.Empty;
+
         public string Destination { get; set; } = string.Empty;
 
         /// <summary>True after a person decided something (skipped it, undid it, discarded it): the album is left alone, even if its files change, until someone chooses "check again".</summary>

@@ -161,6 +161,8 @@ namespace LabelMaker.Core.Pipeline
             item.Reason = outcome.Reason;
             if (outcome.Match != null) item.Match = outcome.Match;
             if (outcome.Destination.Length > 0) item.Destination = outcome.Destination;
+            if (outcome.Artist.Length > 0) item.Artist = outcome.Artist;
+            if (outcome.Album.Length > 0) item.Album = outcome.Album;
             if (outcome.Retry)
             {
                 var delay = _options.RetryDelays[Math.Min(item.Attempts, _options.RetryDelays.Count - 1)];

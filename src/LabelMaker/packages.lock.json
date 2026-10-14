@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net6.0": {
+      "MediaBrowser.Server.Core": {
+        "type": "Direct",
+        "requested": "[4.9.1.90, )",
+        "resolved": "4.9.1.90",
+        "contentHash": "lyThQ7kXhzLNisMfqzSoxrhG/7gnK9/lJyNfV/TCo10c30oKiTR2n5nG+ognv6hCNz9jmcPpAt3561Oj7EIVwQ==",
+        "dependencies": {
+          "MediaBrowser.Common": "4.9.1.90"
+        }
+      },
+      "TagLibSharp": {
+        "type": "Direct",
+        "requested": "[2.3.0, )",
+        "resolved": "2.3.0",
+        "contentHash": "Qo4z6ZjnIfbR3Us1Za5M2vQ97OWZPmODvVmepxZ8XW0UIVLGdO2T63/N3b23kCcyiwuIe0TQvMEQG8wUCCD1mA=="
+      },
+      "MediaBrowser.Common": {
+        "type": "Transitive",
+        "resolved": "4.9.1.90",
+        "contentHash": "QzXFYh7TPskAtctdCguJxep9aMSfIrsT4F+xUrdAVh4pj2KAD3DzwkY1DDPIUUD6M+Lgwag/NesBgd1pgLffbQ=="
+      }
+    }
+  }
+}

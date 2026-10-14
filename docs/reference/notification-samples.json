@@ -3,7 +3,7 @@
   "info": {
     "PluginVersion": "1.0.0.0",
     "ApiLevel": 1,
-    "Features": ["events", "catalog", "status"]
+    "Features": ["events", "catalog", "status", "albums", "review"]
   },
   "pushed": {
     "LabelMaker.NeedsReview": {
@@ -56,7 +56,7 @@
     "Counts": { "Waiting": 1, "NeedsReview": 5, "NoMatch": 2, "Ready": 4, "Applying": 0, "Done": 37, "Failed": 0, "Duplicate": 1, "Skipped": 0 },
     "Lanes": [
       { "LaneId": "main", "LaneName": "Main", "Counts": { "NeedsReview": 5, "Ready": 4, "Done": 30 }, "Problems": [] },
-      { "LaneId": "kids", "LaneName": "Kids", "Counts": { "NoMatch": 2, "Done": 7 }, "Problems": [ { "Kind": "LowDiskSpace", "Message": "Less than 1 GB is free on the library disk for the Kids lane." } ] }
+      { "LaneId": "kids", "LaneName": "Kids", "Counts": { "NoMatch": 2, "Done": 7 }, "Problems": [ { "Kind": "LowDiskSpace", "Message": "Only 800 MB is free on the library disk. Large albums may not fit soon.", "Blocking": false } ] }
     ],
     "Service": { "MusicBrainz": "Ok", "SinceUtc": null },
     "LatestSeq": 49
@@ -103,7 +103,7 @@
       {
         "Id": "LabelMaker.ServiceTrouble", "Title": "Music lookups are stuck",
         "Description": "Sent when MusicBrainz could not be reached for a while and albums are waiting.",
-        "Params": [ { "Name": "Minutes", "Label": "After this many minutes", "Type": "int", "Min": 5, "Max": 240, "Default": 15 } ],
+        "Params": [ { "Name": "Minutes", "Label": "After this many minutes", "Type": "int", "Min": 15, "Max": 240, "Default": 15 } ],
         "DefaultRule": { "Enabled": false, "Params": { "Minutes": 15 } },
         "LockScreenText": "Music lookups are stuck. Unlock for details.", "OpensTab": "LabelMaker/Summary"
       }

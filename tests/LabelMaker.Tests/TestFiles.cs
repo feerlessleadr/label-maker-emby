@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace LabelMaker.Tests
 {
@@ -11,6 +12,15 @@ namespace LabelMaker.Tests
         private readonly List<string> _made = new List<string>();
 
         public static string Fixture(string name) => Path.Combine(AppContext.BaseDirectory, "Fixtures", name);
+
+        /// <summary>A file inside the repository (found by walking up from the test folder to the one that holds docs and src).</summary>
+        public static string RepoFile(params string[] parts)
+        {
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir != null && !(Directory.Exists(Path.Combine(dir.FullName, "docs")) && Directory.Exists(Path.Combine(dir.FullName, "src")))) dir = dir.Parent;
+            if (dir == null) throw new DirectoryNotFoundException("The repository folder was not found above the test folder.");
+            return Path.Combine(new[] { dir.FullName }.Concat(parts).ToArray());
+        }
 
         /// <summary>A fresh copy of a fixture the test may change. The copy is removed by <see cref="Dispose"/>.</summary>
         public string Copy(string fixtureName, string asName)

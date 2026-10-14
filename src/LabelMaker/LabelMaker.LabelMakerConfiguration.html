@@ -1,0 +1,216 @@
+<div is="emby-scroller" class="view flex flex-direction-column scrollFrameY flex-grow" data-horizontal="false" data-forcescrollbar="true" data-centerfocus="true" data-bindheader="true" data-controller="__plugin/LabelMakerConfigurationjs" data-title="Label Maker">
+    <style>
+        .lm-tiles { display: flex; flex-wrap: wrap; gap: 1em; margin: 1.5em 0; }
+        .lm-tile { flex: 1 1 110px; padding: 1em; border-radius: .4em; background: rgba(128,128,128,.15); border-left: .35em solid #888; }
+        .lm-tile .lm-count { font-size: 2em; line-height: 1.1; }
+        .lm-tile .lm-label { opacity: .8; }
+        .lm-review { border-left-color: #ffb300; }
+        .lm-ready { border-left-color: #00a4dc; }
+        .lm-done { border-left-color: #43a047; }
+        .lm-failed { border-left-color: #e53935; }
+        .lm-banner { padding: .8em 1em; border-radius: .4em; background: rgba(255,179,0,.15); margin-bottom: 1em; }
+        .lm-bad { padding: .8em 1em; border-radius: .4em; background: rgba(229,57,53,.18); margin: .6em 0; }
+        .lm-card { background: rgba(128,128,128,.12); border: 1px solid rgba(128,128,128,.28); border-radius: .6em; padding: 1.2em 1.5em; margin: 1.2em 0; }
+        .lm-card h3 { margin: 0 0 .8em 0; padding-bottom: .5em; border-bottom: 1px solid rgba(128,128,128,.28); }
+        .lm-note { opacity: .8; margin: .8em 0; }
+        .lm-table { width: 100%; border-collapse: collapse; table-layout: auto; }
+        .lm-table th, .lm-table td { text-align: left; padding: .5em .6em; vertical-align: top; border-bottom: 1px solid rgba(128,128,128,.25); overflow-wrap: anywhere; }
+        .lm-table input.lm-num { width: 4.5em; }
+        .lm-table td button { white-space: nowrap; min-width: 5em; }
+        .lm-pill { display: inline-block; padding: .1em .6em; border-radius: 1em; font-size: .85em; color: #fff; background: #888; white-space: nowrap; }
+        .lm-pill.s-NeedsReview, .lm-pill.s-NoMatch, .lm-pill.s-Warning { background: #f9a825; color: #222; }
+        .lm-pill.s-Ready, .lm-pill.s-Info { background: #00a4dc; }
+        .lm-pill.s-Done, .lm-pill.s-Ok { background: #43a047; }
+        .lm-pill.s-Failed, .lm-pill.s-Error { background: #e53935; }
+        .lm-pill.s-Skipped, .lm-pill.s-Duplicate, .lm-pill.s-Waiting, .lm-pill.s-Applying { background: #78909c; }
+        .lm-filters { display: flex; flex-wrap: wrap; gap: 1em; align-items: flex-end; }
+        .lm-filters > div { flex: 1 1 180px; }
+        .lm-row { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin: .6em 0; }
+        .lm-lane { border: 1px solid rgba(128,128,128,.35); border-radius: .5em; padding: .8em 1em; margin: .8em 0; }
+        .lm-lane .lm-lanefields { display: flex; flex-wrap: wrap; gap: 1em; }
+        .lm-lane .lm-lanefields > div { flex: 1 1 260px; }
+        .lm-pager { display: flex; gap: 1em; align-items: center; margin: 1em 0; }
+        .lm-good { color: #66bb6a; }
+        .lm-small { font-size: .9em; opacity: .85; }
+        .lm-checks div { margin: .25em 0; }
+        .localnav { display: flex; flex-wrap: wrap; gap: .5em; margin: 1em 0 1.4em 0; padding-bottom: 1em; border-bottom: 1px solid rgba(128,128,128,.3); }
+        .localnav .nav-button { margin: 0; padding: .6em 1.4em; border-radius: .5em; background: rgba(128,128,128,.18); font-weight: 500; }
+        .localnav .nav-button:hover { background: rgba(128,128,128,.32); }
+        .localnav .nav-button.ui-btn-active { background: #00a4dc; color: #fff; }
+        .lmRoot .checkboxContainer { display: block; margin: 1.1em 0; }
+        .lmRoot .checkboxContainer > .fieldDescription { margin: .35em 0 0 0; }
+        .lmRoot .lm-card .fieldDescription { margin-top: .3em; max-width: 60em; }
+        .lmRoot form { max-width: none; }
+        .lmRoot textarea { width: 100%; box-sizing: border-box; font-family: monospace; }
+        @media (max-width: 900px) { .lm-table, .lm-table tbody { display: block; } .lm-table tr { display: block; padding: .6em 0; border-bottom: 1px solid rgba(128,128,128,.25); } .lm-table tr:first-child { display: none; } .lm-table td { display: block; border: 0; padding: .15em .2em; } }
+    </style>
+    <div class="scrollSlider flex-direction-column padded-left padded-left-page padded-right padded-top-page padded-bottom-page">
+        <div class="readOnlyContent auto-center lmRoot" style="max-width: 1200px;">
+            <h1 class="pageTitle">Label Maker</h1>
+
+            <div data-role="controlgroup" data-type="horizontal" class="localnav">
+                <a is="emby-linkbutton" class="nav-button ui-btn-active" href="#" data-role="button" data-target="lmDashPage">Dashboard</a>
+                <a is="emby-linkbutton" class="nav-button" href="#" data-role="button" data-target="lmAlbumsPage">Albums</a>
+                <a is="emby-linkbutton" class="nav-button" href="#" data-role="button" data-target="lmSettingsPage">Settings</a>
+            </div>
+
+            <!-- ============================== Dashboard ============================== -->
+            <div id="lmDashPage">
+                <div class="lm-banner" id="lmBanner"></div>
+                <div class="lm-tiles" id="lmTiles"></div>
+
+                <div class="lm-card">
+                    <h3>Lanes</h3>
+                    <div id="lmLanes" class="fieldDescription">Loading...</div>
+                    <div class="fieldDescription" id="lmLastPass" style="margin-top: 1em;"></div>
+                </div>
+
+                <div class="lm-card">
+                    <h3>Check the inbox</h3>
+                    <div class="fieldDescription">Label Maker looks at every inbox on its own (how often is set in Settings &gt; Checking). Use these buttons to look right now or to stop for a while.</div>
+                    <div class="lm-row" style="margin-top: 1em;">
+                        <button is="emby-button" type="button" id="lmRun" class="raised button-submit"><span>Check inbox now</span></button>
+                        <button is="emby-button" type="button" id="lmPause" class="raised"><span>Pause</span></button>
+                        <button is="emby-button" type="button" id="lmDryToggle" class="raised"><span>Turn dry run off</span></button>
+                    </div>
+                    <div class="fieldDescription" id="lmRunNote"></div>
+                </div>
+
+                <div class="lm-card">
+                    <h3>Folder health check</h3>
+                    <div class="fieldDescription">Tries what Label Maker really does in each lane (opens the folders, creates, renames and deletes a small test file, looks at the free space) as the account Emby runs as, and says what to fix.</div>
+                    <div class="lm-row"><button is="emby-button" type="button" id="lmHealthBtn" class="raised"><span>Check the folders</span></button></div>
+                    <div id="lmHealth" class="lm-checks"></div>
+                </div>
+            </div>
+
+            <!-- ============================== Albums ============================== -->
+            <div id="lmAlbumsPage" class="hide">
+                <div class="lm-card">
+                    <div class="lm-filters">
+                        <div>
+                            <select is="emby-select" id="lmFState" label="Show:">
+                                <option value="NeedsReview,NoMatch,Failed,Duplicate">Needs my attention</option>
+                                <option value="NeedsReview">Needs review</option>
+                                <option value="NoMatch">No match found</option>
+                                <option value="Ready">Ready (dry run)</option>
+                                <option value="Waiting">Waiting</option>
+                                <option value="Failed">Failed</option>
+                                <option value="Duplicate">Already in the library</option>
+                                <option value="Skipped">Skipped or discarded</option>
+                                <option value="Done">Filed</option>
+                                <option value="">Everything</option>
+                            </select>
+                        </div>
+                        <div>
+                            <select is="emby-select" id="lmFLane" label="Lane:"><option value="">All lanes</option></select>
+                        </div>
+                        <div><input is="emby-input" type="text" id="lmFText" label="Artist or album contains:" /></div>
+                        <div><button is="emby-button" type="button" id="lmFApply" class="raised"><span>Show</span></button></div>
+                    </div>
+                </div>
+
+                <div id="lmAlbumTotal" class="fieldDescription"></div>
+                <table class="lm-table" id="lmAlbumTable"></table>
+                <div class="lm-pager">
+                    <button is="emby-button" type="button" id="lmPrev" class="raised"><span>Previous</span></button>
+                    <span id="lmPageInfo" class="fieldDescription"></span>
+                    <button is="emby-button" type="button" id="lmNext" class="raised"><span>Next</span></button>
+                </div>
+
+                <div class="lm-card hide" id="lmDetail">
+                    <h3 id="lmDetailTitle">Album</h3>
+                    <div id="lmDetailState" class="fieldDescription"></div>
+                    <div class="lm-row" id="lmDetailButtons"></div>
+                    <div id="lmDetailBody"></div>
+                </div>
+            </div>
+
+            <!-- ============================== Settings ============================== -->
+            <div id="lmSettingsPage" class="hide">
+                <form id="lmForm">
+                    <div class="lm-card">
+                        <h3>Lanes</h3>
+                        <div class="fieldDescription">A lane is one inbox folder (where downloads arrive) and the library folder its albums are filed into. Deleting a lane never touches any file. Use full paths: a drive letter such as <b>E:\Downloads\Music</b> or a network path such as <b>\\server\share</b>. A network path is the safer choice when Emby runs as a service. Two lanes cannot share an inbox, and an inbox cannot be inside a library folder.</div>
+                        <div id="lmLaneRows"></div>
+                        <div class="lm-row"><button is="emby-button" type="button" id="lmAddLane" class="raised"><span>Add a lane</span></button></div>
+                    </div>
+
+                    <div class="lm-card">
+                        <h3>Checking</h3>
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" id="lmDryRun" /><span>Dry run (nothing is filed automatically)</span></label>
+                            <div class="fieldDescription">While this is on, Label Maker matches albums and shows them as Ready, but moves and changes no file by itself. Your own choices on the Albums tab are still carried out. Switch it off when the Ready list looks right.</div>
+                        </div>
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" id="lmPaused" /><span>Paused</span></label>
+                            <div class="fieldDescription">While paused nothing is looked at or changed. Folder problems are still reported to your phone.</div>
+                        </div>
+                        <div class="inputContainer"><input is="emby-input" type="number" step="1" min="15" max="3600" id="lmPassSeconds" label="Look at the inboxes every (seconds):" />
+                            <div class="fieldDescription">Between 15 and 3600. The change takes effect after the current wait.</div></div>
+                        <div class="inputContainer"><input is="emby-input" type="number" step="1" min="10" max="3600" id="lmStableSeconds" label="An album is finished downloading after its files stay unchanged for (seconds):" />
+                            <div class="fieldDescription">Between 10 and 3600. A folder with a download still in progress is never touched.</div></div>
+                        <div class="inputContainer"><input is="emby-input" type="number" step="1" min="1" max="200" id="lmMaxPerPass" label="Albums handled per check:" />
+                            <div class="fieldDescription">A big drop of music is worked through in pieces, oldest first.</div></div>
+                    </div>
+
+                    <div class="lm-card">
+                        <h3>Matching</h3>
+                        <div class="fieldDescription">How sure Label Maker has to be before it files an album without asking. The defaults were measured on a real library of 287 albums, where nearly every album filed by itself was the right one.</div>
+                        <div class="inputContainer"><input is="emby-input" type="number" step="0.01" min="0.5" max="1" id="lmAuto" label="File by itself at or above (0.50 to 1.00):" />
+                            <div class="fieldDescription">A match scores 1.00 when every file fits perfectly. Lower this and more albums are filed without you; raise it and more wait for review.</div></div>
+                        <div class="inputContainer"><input is="emby-input" type="number" step="0.01" min="0.3" max="0.95" id="lmReview" label="Suggest for review at or above (0.30 to 0.95):" />
+                            <div class="fieldDescription">Below this Label Maker says it found no match.</div></div>
+                        <div class="inputContainer"><input is="emby-input" type="number" step="0.01" min="0.1" max="0.9" id="lmMinFile" label="A file fits a track at or above (0.10 to 0.90):" />
+                            <div class="fieldDescription">One file that fits no track poorly keeps the whole album out of automatic filing.</div></div>
+                        <div class="inputContainer"><input is="emby-input" type="number" step="0.01" min="0" max="0.3" id="lmMargin" label="Other editions count as equally good within (0 to 0.30):" />
+                            <div class="fieldDescription">When two different editions score this close, a person picks.</div></div>
+                        <div class="inputContainer"><input is="emby-input" type="number" step="1" min="1" max="10" id="lmGroups" label="Albums to check per MusicBrainz search (1 to 10):" /></div>
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" id="lmSameRec" /><span>Editions must also be the same recordings</span></label>
+                            <div class="fieldDescription">Off (recommended): editions that list the same titles in the same places are treated as the same album, so a remaster does not need your decision. On: only editions with the very same recordings count as the same, and remasters go to review.</div>
+                        </div>
+                        <div class="inputContainer"><input is="emby-input" type="text" id="lmCountries" label="Preferred countries, best first:" />
+                            <div class="fieldDescription">Two-letter codes such as US, XW (worldwide), GB. Used to pick one edition when several fit identically.</div></div>
+                        <div class="inputContainer"><input is="emby-input" type="text" id="lmContact" label="Your email or web address for MusicBrainz (optional):" />
+                            <div class="fieldDescription">Added to the name Label Maker gives MusicBrainz, so they can reach you if something goes wrong. Takes effect after Emby restarts. Only artist, album and track names are ever sent to MusicBrainz.</div></div>
+                    </div>
+
+                    <div class="lm-card">
+                        <h3>Naming and tags</h3>
+                        <div class="fieldDescription">By default files are named exactly the way MusicBrainz Picard's stock script names them (Artist/Album/01 Title).</div>
+                        <div class="inputContainer" style="margin-top: 1em;">
+                            <label class="inputLabel inputLabelUnfocused" for="lmScript">Picard file naming script (leave empty for the stock script):</label>
+                            <textarea is="emby-textarea" id="lmScript" rows="6" class="emby-textarea"></textarea>
+                            <div class="fieldDescription">Supports the parts of Picard's scripting that file naming needs: $if, $if2, $and, $or, $gt, $num and the usual %variables%.</div>
+                        </div>
+                        <div class="selectContainer"><select is="emby-select" id="lmId3" label="ID3 version for MP3 files:"><option value="4">2.4 (Picard's default)</option><option value="3">2.3</option></select></div>
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" id="lmId3v1" /><span>Keep an ID3v1 tag on MP3 files</span></label>
+                            <div class="fieldDescription">Picard writes one by default. Other tags in the files, such as lyrics, ratings and ReplayGain, are never touched.</div>
+                        </div>
+                    </div>
+
+                    <div class="lm-card">
+                        <h3>Phone alerts</h3>
+                        <div class="fieldDescription">Label Maker tells the Embidextrous app through Emby itself (no outside service). The app decides which alerts you see and when; these switches decide what the server sends at all. An alert that is off is neither sent nor kept in the catch-up list.</div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="lmAlertMaster" /><span>Send phone alerts</span></label></div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="lmAlertReview" /><span>Albums need review</span></label></div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="lmAlertFailed" /><span>An album failed</span></label></div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="lmAlertLane" /><span>A lane has a problem (and when it is fixed)</span></label></div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="lmAlertApplied" /><span>Albums were filed automatically</span></label>
+                            <div class="fieldDescription">Off by default: after a big drop it is a lot of alerts. In dry run it says what would have been filed.</div></div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="lmAlertTrouble" /><span>Music lookups are stuck (and when they work again)</span></label>
+                            <div class="fieldDescription">Sent when MusicBrainz has not answered for 15 minutes while albums are waiting.</div></div>
+                        <div class="checkboxContainer"><label><input is="emby-checkbox" type="checkbox" id="lmAlertPass" /><span>A check I started finished</span></label></div>
+                    </div>
+
+                    <div class="lm-row">
+                        <button is="emby-button" type="submit" class="raised button-submit"><span>Save</span></button>
+                        <span id="lmSaveNote" class="fieldDescription"></span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

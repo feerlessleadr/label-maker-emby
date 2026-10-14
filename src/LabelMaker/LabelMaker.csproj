@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>LabelMaker</AssemblyName>
+    <RootNamespace>LabelMaker</RootNamespace>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>annotations</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
+    <CheckForOverflowUnderflow>True</CheckForOverflowUnderflow>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- The engine (LabelMaker.Core, no Emby types) is compiled into this one DLL: Emby loads a plugin from a single file. -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="**\*.cs" Exclude="obj\**;bin\**" />
+    <Compile Include="..\LabelMaker.Core\**\*.cs" Exclude="..\LabelMaker.Core\obj\**;..\LabelMaker.Core\bin\**" LinkBase="Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="LabelMaker.LabelMakerConfiguration.html" />
+    <None Remove="LabelMaker.LabelMakerConfiguration.js" />
+    <EmbeddedResource Include="LabelMaker.LabelMakerConfiguration.html" LogicalName="LabelMaker.LabelMakerConfiguration.html" />
+    <EmbeddedResource Include="LabelMaker.LabelMakerConfiguration.js" LogicalName="LabelMaker.LabelMakerConfiguration.js" />
+    <!-- TagLibSharp (LGPL) is carried unmodified inside the plugin and loaded by the plugin itself: a separate DLL next to a plugin is not found by Emby. -->
+    <EmbeddedResource Include="$(NuGetPackageRoot)taglibsharp/2.3.0/lib/netstandard2.0/TagLibSharp.dll" LogicalName="TagLibSharp.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="MediaBrowser.Server.Core" Version="4.9.1.90" />
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+  </ItemGroup>
+</Project>

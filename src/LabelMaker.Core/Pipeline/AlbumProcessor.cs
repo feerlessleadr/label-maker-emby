@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using LabelMaker.Core.Inbox;
 using LabelMaker.Core.Matching;
+using LabelMaker.Core.Models;
 using LabelMaker.Core.MusicBrainz;
 using LabelMaker.Core.Tags;
 
@@ -23,6 +24,11 @@ namespace LabelMaker.Core.Pipeline
 
         /// <summary>True when MusicBrainz was busy or unreachable: the album waits and is tried again later, it is not "no match".</summary>
         public bool Retry { get; set; }
+
+        /// <summary>The artist and album the files' tags name.</summary>
+        public string Artist { get; set; } = string.Empty;
+
+        public string Album { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -51,6 +57,28 @@ namespace LabelMaker.Core.Pipeline
 
         /// <param name="stage">Called with "Applying" just before files are changed, so the queue shows it (and a crash can be resumed).</param>
         public async Task<ProcessOutcome> ProcessAsync(Lane lane, AlbumUnit unit, bool dryRun, Action<string>? stage, CancellationToken cancellation)
+        {
+            var (artist, album) = TagSummary(unit);
+            var outcome = await ProcessCoreAsync(lane, unit, dryRun, stage, cancellation).ConfigureAwait(false);
+            outcome.Artist = artist;
+            outcome.Album = album;
+            return outcome;
+        }
+
+        /// <summary>The artist and album most of the first few files name (read before anything moves).</summary>
+        private static (string Artist, string Album) TagSummary(AlbumUnit unit)
+        {
+            var tags = new List<TrackTags>();
+            foreach (var path in unit.Files.Take(8))
+            {
+                try { tags.Add(TrackTagFile.Read(path)); }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is TagLib.CorruptFileException || e is TagLib.UnsupportedFormatException) { }
+            }
+            var artist = ReleaseVerifier.MostCommon(tags.Select(t => t.AlbumArtist.Length > 0 ? t.AlbumArtist : t.Artist));
+            return (artist, ReleaseVerifier.MostCommon(tags.Select(t => t.Album)));
+        }
+
+        private async Task<ProcessOutcome> ProcessCoreAsync(Lane lane, AlbumUnit unit, bool dryRun, Action<string>? stage, CancellationToken cancellation)
         {
             // 1. Read the tags.
             var files = new List<AlbumFile>();
