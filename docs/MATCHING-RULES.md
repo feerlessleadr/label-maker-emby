@@ -88,6 +88,8 @@ recordings, so whenever both an original and a remaster fit your files, you are 
 albums that landed on the right album with the right song titles in the right places. The titles rule is the default because the extra 11% would otherwise all be
 questions with no visible difference between the answers.
 
+**Two different albums with the same name (added 2026-10-14).** Several editions of one album are treated as interchangeable when they read the same for your files. But when two *different* MusicBrainz albums that share the very same title both fit your files perfectly (for example a movie soundtrack and a stage cast recording, both called "The Sound of Music"), Label Maker does not pick one: it asks you. A differently named album, such as a "Deluxe Edition", does not trigger this. The rule matters most for single tracks, where one file cannot tell two same-named albums apart. Measured on your library it moved about 5 of 287 albums from automatic to review and prevented about 1 wrong automatic match.
+
 ## 7. When Label Maker cannot decide (and what you can do)
 Status: the matching, these sentences and the review actions (see "What you can do about it" below) are built in the engine. The review screen that shows them, the automatic retries and the "keep both" choices are designed but **not built yet** (they come with the plugin shell and the review screen); until then an album that is not applied simply stays in the inbox untouched.
 
@@ -98,6 +100,7 @@ The plain sentences you will see, and what each means:
 | "MusicBrainz lists this album under a different name or artist than your tags say, so please check it." | The album was found only by a looser search: another artist name ("mgk" for "Machine Gun Kelly") or a renamed album. | Check that it is the right album, then approve it or pick another. |
 | "The files in this folder carry different MusicBrainz release ids, so please check which album they belong to." | Some files say they belong to one release, others to another (a folder mixing editions or albums). | Pick the right edition in the review screen, or split the folder. |
 | "Several editions fit these files about equally." | Two or more editions fit and they list different titles or order for your files. | Pick the edition in the review screen. |
+| "Two different albums on MusicBrainz fit these files equally, so please pick the right one." | Two separate albums with the very same title list your track identically (a film soundtrack and a cast recording both called "The Sound of Music"). A single track cannot tell them apart. | Pick the right album in the review screen. |
 | "1 of 4 files could not be matched to a track of the best release." | One file does not belong to the album Label Maker found (or the release does not list it). | Look at that file: wrong album, a bonus track, or a mislabeled file. Fix the tag or keep the album as is. |
 | "The best match is only probable." | The best edition scored under the automatic threshold. | Check the suggestion and approve it, pick another, or search by hand. |
 | "Nothing on MusicBrainz fits these files well enough." | The best candidate scored under 0.60. | Search by hand, paste a MusicBrainz link, or keep your tags. |

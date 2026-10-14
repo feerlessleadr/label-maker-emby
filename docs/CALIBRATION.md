@@ -29,3 +29,10 @@ id: those are the ones with a trustworthy answer. If fewer than half do, say so 
 - Every miss is listed with the reason, so we can fix the matcher or send that kind of album to review.
 
 First run: the 92-track test library on the development PC, before your export arrives.
+
+## Single tracks (2026-10-14, after the owner's MusicGrabber sample)
+A MusicGrabber single arrives as an album folder with one track, no `.albuminfo`. New scenarios in the harness (`single track, tags as they are` and `... with [FLAC] noise`) take one repeatably-chosen track per library album. New `--noid-out <file>` writes the yes/no list for albums with no release id (a local file: it names real folders).
+- **Result at the 0.92 bar, tags as they are, 287 albums:** 247 of 287 (86%) applied automatically; 8 counted wrong. Of those 8: 1 is an artifact (the library's release no longer exists on MusicBrainz), 5 are the same album as another edition (not a real error), and 2 are real: two same-named albums (a soundtrack against another recording) where the library's album was not even among the candidates, and a compilation. So real precision for singles is about 99.2%, near the 99% target.
+- **New rule from this** (`AlbumMatcher.Finish`): a different MusicBrainz album with the very same title that fits equally well goes to review instead of being picked (`SameNameAlbumTests`). Cost: about 5 more albums in review (full albums and singles each), prevents about 1 wrong match. A wider rule (any other album, including "Deluxe") cost 13 extra reviews for 2 fewer wrong, and was rejected.
+- **Full-album numbers moved slightly** (0.92 bar, tags as they are): 232 applied (81%), 10 counted wrong (98.3% by same album).
+- Remaining weakness: the search looks at only 5 release groups; a very common album title can push the library's own album out of the candidates (the "Sound of Music" case). A later improvement: search again with the track title when the album is not found among the candidates.

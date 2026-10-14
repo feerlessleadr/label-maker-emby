@@ -381,10 +381,17 @@ namespace LabelMaker.Core.Matching
 
             // Other editions that fit about as well: the same recordings in the same places do not matter, different ones do.
             var rivals = ordered.Skip(1).Where(c => c.Score >= best.Score - _settings.Margin).ToList();
-            int identical = rivals.Count(c => Same(c, best));
+            // Editions of one album are interchangeable. A different album with the very same title (another release group: a film soundtrack and a cast recording both called "The Sound of Music") that reads the same for these files is not: a person decides. A differently named album (a "Deluxe" edition) is left to the edition rules.
+            bool OtherAlbum(ReleaseVerification c) => c.Release.ReleaseGroupId.Length > 0 && best.Release.ReleaseGroupId.Length > 0 && c.Release.ReleaseGroupId != best.Release.ReleaseGroupId
+                && TitleNormaliser.Normalise(c.Release.Title) == TitleNormaliser.Normalise(best.Release.Title);
+            int identical = rivals.Count(c => Same(c, best) && !OtherAlbum(c));
             if (rivals.Any(c => !Same(c, best)))
             {
                 return Result(MatchOutcome.NeedsReview, "Several editions fit these files about equally.", identical);
+            }
+            if (rivals.Any(OtherAlbum))
+            {
+                return Result(MatchOutcome.NeedsReview, "Two different albums on MusicBrainz fit these files equally, so please pick the right one.", identical);
             }
 
             return Result(

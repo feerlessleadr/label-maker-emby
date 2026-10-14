@@ -65,11 +65,13 @@ namespace LabelMaker.Calibrate
             int limit = int.MaxValue;
             var editionRule = EditionRule.SameRecordings;
             var inputs = new List<string>();
+            string noIdOut = string.Empty;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--cache") cache = args[++i];
                 else if (args[i] == "--out") report = args[++i];
                 else if (args[i] == "--limit") limit = int.Parse(args[++i], CultureInfo.InvariantCulture);
+                else if (args[i] == "--noid-out") noIdOut = args[++i];
                 else if (args[i] == "--editions") editionRule = args[++i] == "titles" ? EditionRule.SameTitles : EditionRule.SameRecordings;
                 else inputs.Add(args[i]);
             }
@@ -93,14 +95,16 @@ namespace LabelMaker.Calibrate
                 ReleaseMbid = id,
             };
 
-            var scenarios = new (string Name, Func<Album, TrackTags, TrackTags> Change, Func<Album, AlbumInfo?> Hint)[]
+            var scenarios = new (string Name, Func<Album, TrackTags, TrackTags> Change, Func<Album, AlbumInfo?> Hint, bool Single)[]
             {
-                ("tags as they are", (a, t) => t, a => null),
-                ("album name with [FLAC] noise", (a, t) => Clone(t, album: t.Album + " [FLAC]"), a => null),
-                ("MusicGrabber hint, right release id", (a, t) => t, a => Hint(a, a.TruthId)),
-                ("MusicGrabber hint, wrong release id", (a, t) => t, a => Hint(a, WrongId(a))),
-                ("release id in the tags, right", (a, t) => Clone(t, releaseMbid: a.TruthId), a => null),
-                ("release id in the tags, wrong", (a, t) => Clone(t, releaseMbid: WrongId(a)), a => null),
+                ("tags as they are", (a, t) => t, a => null, false),
+                ("single track, tags as they are", (a, t) => t, a => null, true),
+                ("single track, album name with [FLAC] noise", (a, t) => Clone(t, album: t.Album + " [FLAC]"), a => null, true),
+                ("album name with [FLAC] noise", (a, t) => Clone(t, album: t.Album + " [FLAC]"), a => null, false),
+                ("MusicGrabber hint, right release id", (a, t) => t, a => Hint(a, a.TruthId), false),
+                ("MusicGrabber hint, wrong release id", (a, t) => t, a => Hint(a, WrongId(a)), false),
+                ("release id in the tags, right", (a, t) => Clone(t, releaseMbid: a.TruthId), a => null, false),
+                ("release id in the tags, wrong", (a, t) => Clone(t, releaseMbid: WrongId(a)), a => null, false),
             };
 
             var truthCache = new Dictionary<string, ReleaseInfo?>();
@@ -110,9 +114,9 @@ namespace LabelMaker.Calibrate
             {
                 done++;
                 if (done % 10 == 0) Console.WriteLine($"  {done} of {answered.Count} albums  (network {handler.NetworkCalls}, cached {handler.CacheHits}, rows {rows.Count})");
-                var subset = Subset(album);
                 foreach (var scenario in scenarios)
                 {
+                    var subset = scenario.Single ? OneTrack(album) : Subset(album);
                     var files = subset.Select(i => new AlbumFile(album.Names[i], scenario.Change(album, album.Tracks[i]))).ToList();
                     var row = new Row
                     {
@@ -164,9 +168,43 @@ namespace LabelMaker.Calibrate
                 }
             }
 
+            if (noIdOut.Length > 0) await WriteNoIdListAsync(noIdOut, albums, new AlbumMatcher(mb, new MatchSettings { EditionRule = editionRule }));
             File.WriteAllText(report, BuildReport(rows, albums, handler), new UTF8Encoding(false));
             Console.WriteLine($"Report written to {report} (network {handler.NetworkCalls}, cached {handler.CacheHits}).");
             return 0;
+        }
+
+        /// <summary>For albums with no release id there is no answer key, so the owner is asked: a numbered yes/no list of what Label Maker would pick.</summary>
+        private static async Task WriteNoIdListAsync(string path, List<Album> albums, AlbumMatcher matcher)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("# Albums with no MusicBrainz id: is Label Maker right?");
+            sb.AppendLine();
+            sb.AppendLine("Answer each with yes (that is the album), no (wrong album) or unsure. A yes becomes a test case. Local file: it names your own folders.");
+            sb.AppendLine();
+            int n = 0;
+            foreach (var album in albums.Where(a => a.TruthId.Length == 0 && !a.MixedIds))
+            {
+                n++;
+                var files = album.Names.Select((name, i) => new AlbumFile(name, album.Tracks[i])).ToList();
+                string says;
+                try
+                {
+                    var r = await matcher.MatchAsync(files, null);
+                    says = r.Best == null
+                        ? r.Outcome + ": " + r.Reason
+                        : $"{r.Outcome}, \"{r.Best.Release.Title}\" by {r.Best.Release.ArtistCredit} ({r.Best.Release.Country} {r.Best.Release.Date}), score {r.Best.Score:0.00}, {r.Best.WeakFiles} weak file(s). {r.Reason}";
+                }
+                catch (MusicBrainzUnavailableException e) { says = "Error: " + e.Message; }
+                var artist = ReleaseVerifier.MostCommon(album.Tracks.Select(t => t.AlbumArtist.Length > 0 ? t.AlbumArtist : t.Artist));
+                var name = ReleaseVerifier.MostCommon(album.Tracks.Select(t => t.Album));
+                sb.AppendLine($"{n}. **{album.Source} / {album.Folder}** ({album.Tracks.Count} files; tags say: {artist} - {name})");
+                sb.AppendLine($"   - Label Maker says: {says}");
+                sb.AppendLine("   - Right? yes / no / unsure");
+                sb.AppendLine();
+            }
+            File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+            Console.WriteLine($"No-id list written to {path} ({n} albums).");
         }
 
         // ---- loading -----------------------------------------------------------------------------------
@@ -218,6 +256,9 @@ namespace LabelMaker.Calibrate
             int size = rng.Next(1, 7);
             return all.OrderBy(_ => rng.Next()).Take(size).OrderBy(i => i).ToList();
         }
+
+        /// <summary>One track, chosen by a repeatable draw: what a single-song download looks like.</summary>
+        private static List<int> OneTrack(Album album) => new List<int> { new Random(StableHash("single|" + album.Source + "|" + album.Folder)).Next(album.Tracks.Count) };
 
         private static int StableHash(string text)
         {
