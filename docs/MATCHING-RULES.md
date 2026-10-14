@@ -102,6 +102,8 @@ The plain sentences you will see, and what each means:
 | "The best match is only probable." | The best edition scored under the automatic threshold. | Check the suggestion and approve it, pick another, or search by hand. |
 | "Nothing on MusicBrainz fits these files well enough." | The best candidate scored under 0.60. | Search by hand, paste a MusicBrainz link, or keep your tags. |
 | "No release was found for this album." | The search found nothing usable. | Same as above. |
+| "This folder holds 2 different albums by their tags. Label Maker does not split folders yet, so please sort them into one folder each." | The tags name more than one album (for example "Insomniac" and "Dookie"). | Move each album into its own folder; the inbox is checked again. |
+| "1 file(s) could not be read (name). Fix or remove them and the album is checked again." | A file is damaged or is not music. | Replace or delete that file. |
 | "These files have no album name to search for." | The tags have no album. | Type the album name in the review screen's search. |
 | "... is already in the library." | A file with the same name is already there. | Keep both (suffix), replace only if you choose, or discard the new one. |
 | "The path ... is N characters long." | The new file path would be too long for Windows. | Shorten a name or accept a shorter naming pattern. |
@@ -124,6 +126,44 @@ On 287 albums from the owner's library (the real albums average about 3 tracks, 
 - The rest, about 14% of albums, went to review with a reason; in about 4 of 5 of those the best candidate shown was already the right one.
 - **A release id hint** (from MusicGrabber's `.albuminfo` or already in the tags): with the right id, 280 of 287 albums were decided with a single lookup and no search, 99% of the trustworthy albums were applied automatically, and none was wrong. With a **wrong** id (the id of a different album) the hint was ignored every time and the result was exactly what no hint gives (85%, none wrong): a bad hint cannot cause a wrong automatic apply.
 - Not yet measured: albums with no MusicBrainz id in their tags (mostly the kids library), and MusicGrabber's own hint on a real inbox (the test used the library's own ids in its place).
+## 8b. When an album is picked up, and its life in the queue
+Status: this is built and tested in the engine. The Emby plugin will run it on a timer; the review screen and the phone alerts come later.
+
+**When Label Maker looks.** On every pass (about once a minute; the plugin sets the interval) it looks at every lane's inbox again. It does not rely on Windows file-change notifications, because they are unreliable over network shares and with Docker, so looking again is the real trigger. A "Check inbox now" button will just start a pass early.
+
+**What counts as an album.** A folder with music files in it is one album. The files in "CD1", "Disc 2" and similar folders count with the album folder above them. Every track under a folder called "Singles" (MusicGrabber's layout) is handled on its own. Folders whose names start with "." or "_" (MusicGrabber's `.trash`, Label Maker's `_Trash`), "Playlists" folders and the recycle bin are never looked into, and playlist files are left where they are.
+
+**When a download is finished.** All of these must hold, otherwise Label Maker waits:
+- nothing in the folder has changed for **60 seconds** (names, sizes and times of every file, so a new cover or lyrics file counts too);
+- there is no temporary download file in it (`.part`, `.crdownload`, a sync program's temporary file, a name starting with "~");
+- no music file is still open in another program (still being written, or being scanned for viruses).
+Any change starts the 60 seconds again. After a restart of Emby every album also waits its 60 seconds again.
+
+**Order and pace.** Oldest first, one album at a time, at most 20 per pass, so a drop of hundreds of albums works through over time without holding anything else up. MusicBrainz is asked politely, about one request a second.
+
+**The states an album goes through.**
+
+| State | Meaning | What happens next |
+|---|---|---|
+| Waiting | Seen, still downloading, or waiting its turn, or waiting to try again | Handled when it is finished and due |
+| Needs review | A likely match, but something was not certain enough | Waits for you; nothing is touched |
+| No match | Nothing on MusicBrainz fits | Stays in the inbox for you |
+| Ready | Dry run: it would have been applied | Nothing is touched; switch dry run off to apply |
+| Done | Tagged and moved into the library | Finished (it can be undone) |
+| Duplicate | A file with that name is already in the library | Nothing is written; you choose |
+| Failed | Something went wrong (a damaged file, the library folder not reachable) | Fix the cause; it is checked again when the folder changes |
+| Skipped | The album was taken out of the inbox by hand | Finished |
+
+**When MusicBrainz is busy or cannot be reached.** The album goes back to Waiting and is tried again after 1 minute, then 5, then 15, then every 60 minutes. It is never reported as "no match" because of that.
+
+**When files arrive later.** If a new track lands in a folder that was waiting for review, had no match or had failed, the album starts over (it is looked at again from the beginning, as the extra track may change the answer).
+
+**If the server stops in the middle.** An album that was being matched starts over. An album that was being written is finished from its journal, without matching again.
+
+**If the inbox cannot be reached** (a network share drops): nothing is marked gone and nothing is lost; the albums are picked up again when it comes back.
+
+**Not built yet.** Splitting a folder that holds several different albums (it goes to review with that reason instead) and spotting classical music, audiobooks and podcasts.
+
 ## 9. Glossary
 - **Release**: one specific published version of an album, with a fixed song list. Has a MusicBrainz id.
 - **Edition**: informal word for a release when comparing versions of the same album (US, UK, remaster, deluxe).

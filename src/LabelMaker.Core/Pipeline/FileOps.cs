@@ -31,6 +31,11 @@ namespace LabelMaker.Core.Pipeline
 
         /// <summary>True when both paths are on the same volume (or share), so a move is an instant rename.</summary>
         bool SameVolume(string a, string b);
+
+        DateTime LastWriteUtc(string path);
+
+        /// <summary>False while another program has the file open (a download still being written, a virus scan): the file is not finished.</summary>
+        bool CanOpenForRead(string path);
     }
 
     public sealed class RealFileOps : IFileOps
@@ -72,6 +77,25 @@ namespace LabelMaker.Core.Pipeline
         public byte[] ReadAllBytes(string path) => File.ReadAllBytes(path);
 
         public void WriteAllBytes(string path, byte[] bytes) => File.WriteAllBytes(path, bytes);
+
+        public DateTime LastWriteUtc(string path) => File.GetLastWriteTimeUtc(path);
+
+        public bool CanOpenForRead(string path)
+        {
+            try
+            {
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
 
         public bool SameVolume(string a, string b) =>
             string.Equals(Path.GetPathRoot(Path.GetFullPath(a)), Path.GetPathRoot(Path.GetFullPath(b)), StringComparison.OrdinalIgnoreCase);

@@ -102,6 +102,8 @@ namespace LabelMaker.Tests
         public byte[] ReadAllBytes(string path) => _real.ReadAllBytes(path);
         public void WriteAllBytes(string path, byte[] bytes) => _real.WriteAllBytes(path, bytes);
         public bool SameVolume(string a, string b) => _real.SameVolume(a, b);
+        public DateTime LastWriteUtc(string path) => _real.LastWriteUtc(path);
+        public bool CanOpenForRead(string path) => _real.CanOpenForRead(path);
     }
 
     public class PipelineTests

@@ -34,6 +34,9 @@ namespace LabelMaker.Core.Pipeline
         public IList<string> CoverNames { get; } = new List<string> { "cover", "folder", "albumart" };
 
         public IList<string> CoverExtensions { get; } = new List<string> { ".jpg", ".jpeg", ".png" };
+
+        /// <summary>False for a single track from a shared folder: the folder's cover belongs to other tracks, so it is not moved.</summary>
+        public bool MoveCover { get; set; } = true;
     }
 
     public sealed class PlannedSidecar
@@ -148,7 +151,7 @@ namespace LabelMaker.Core.Pipeline
             }
 
             CheckDestinations(plan, ops);
-            AddCover(plan, ops, options);
+            if (options.MoveCover) AddCover(plan, ops, options);
             return plan;
         }
 
