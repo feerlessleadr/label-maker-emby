@@ -192,5 +192,60 @@ namespace LabelMaker.Tests
             Assert.Equal("US", result.Best.Release.Country);
             Assert.StartsWith("1984", result.Best.Release.Date);
         }
+
+        // ---- editions that read the same but list different recordings (a remaster) ----------------------
+
+        private static (ReleaseInfo Original, ReleaseInfo Remaster) TwoEditions()
+        {
+            var original = Insomniac();
+            var remaster = Insomniac();
+            remaster.Id = "11111111-2222-3333-4444-555555555555";
+            remaster.Country = "GB";
+            remaster.Date = "2022-01-01";
+            foreach (var medium in remaster.Media)
+            {
+                foreach (var track in medium.Tracks) track.RecordingId = "remaster-" + track.RecordingId;
+            }
+            return (original, remaster);
+        }
+
+        private static FakeMusicBrainz SearchableWith(params ReleaseInfo[] editions) => new FakeMusicBrainz
+        {
+            Groups = new[] { new ReleaseGroupHit { Id = "g1", Title = "Insomniac", ArtistCredit = "Green Day", PrimaryType = "Album", Score = 100 } },
+            Browse = editions,
+        };
+
+        [Fact]
+        public async Task EditionsWithDifferentRecordingsGoToReviewUnderTheStrictRule()
+        {
+            var (original, remaster) = TwoEditions();
+            var result = await new AlbumMatcher(SearchableWith(original, remaster)).MatchAsync(new[] { File_("Brat", 2, 1), File_("86", 7, 1) }, null);
+            Assert.Equal(MatchOutcome.NeedsReview, result.Outcome);
+        }
+
+        [Fact]
+        public async Task EditionsWithTheSameTitlesInTheSamePlacesAreInterchangeableUnderTheTitleRule()
+        {
+            var (original, remaster) = TwoEditions();
+            var settings = new MatchSettings { EditionRule = EditionRule.SameTitles };
+            var result = await new AlbumMatcher(SearchableWith(original, remaster), settings).MatchAsync(new[] { File_("Brat", 2, 1), File_("86", 7, 1) }, null);
+            Assert.Equal(MatchOutcome.Auto, result.Outcome);
+            Assert.Equal(1, result.InterchangeableEditions);
+            Assert.Equal("11111111-2222-3333-4444-555555555555", result.Best!.Release.Id); // identical for the files: the preferred country (GB) beats an edition with no country
+        }
+
+        [Fact]
+        public async Task TheTitleRulePicksTheEditionWhoseTitlesActuallyFitTheFiles()
+        {
+            var (original, remaster) = TwoEditions();
+            remaster.Media[0].Tracks.First(t => t.Title == "Brat").Title = "Brat (Live)"; // a different track list for the files
+            remaster.Media[0].Tracks.First(t => t.Title == "86").Title = "Eighty-Six";
+            var settings = new MatchSettings { EditionRule = EditionRule.SameTitles };
+            var result = await new AlbumMatcher(SearchableWith(original, remaster), settings).MatchAsync(new[] { File_("Brat", 2, 1), File_("86", 7, 1) }, null);
+            // The other edition lists different titles for these files, so it is not a tie: the edition that fits wins, even under the title rule.
+            Assert.Equal(MatchOutcome.Auto, result.Outcome);
+            Assert.Equal(0, result.InterchangeableEditions);
+            Assert.Equal("46b2741f-10f2-4c3e-9f3d-2c55abfa6f51", result.Best!.Release.Id);
+        }
     }
 }

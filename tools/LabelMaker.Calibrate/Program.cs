@@ -46,6 +46,11 @@ namespace LabelMaker.Calibrate
             public string TruthTitle = string.Empty;
             public string TruthStatus = string.Empty;
             public string Error = string.Empty;
+            public bool SameAlbum;
+            public double TruthScore;
+            public int TruthWeak;
+            public bool TruthInCandidates;
+            public int Interchangeable;
             public string Artist = string.Empty;
             public string AlbumName = string.Empty;
         }
@@ -55,12 +60,14 @@ namespace LabelMaker.Calibrate
             string cache = Path.Combine(Directory.GetCurrentDirectory(), "mbcache");
             string report = Path.Combine(Directory.GetCurrentDirectory(), "calibration-report.md");
             int limit = int.MaxValue;
+            var editionRule = EditionRule.SameRecordings;
             var inputs = new List<string>();
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--cache") cache = args[++i];
                 else if (args[i] == "--out") report = args[++i];
                 else if (args[i] == "--limit") limit = int.Parse(args[++i], CultureInfo.InvariantCulture);
+                else if (args[i] == "--editions") editionRule = args[++i] == "titles" ? EditionRule.SameTitles : EditionRule.SameRecordings;
                 else inputs.Add(args[i]);
             }
             if (inputs.Count == 0) { Console.Error.WriteLine("Give at least one export JSON file."); return 2; }
@@ -71,7 +78,7 @@ namespace LabelMaker.Calibrate
 
             var handler = new CachingHandler(new HttpClientHandler(), cache, TimeSpan.FromMilliseconds(1100));
             var mb = new MusicBrainzClient(handler, "LabelMaker-calibrate/0.1 (feerlessleadr@users.noreply.github.com)") { MinInterval = TimeSpan.Zero, MaxRetries = 6 };
-            var matcher = new AlbumMatcher(mb, new MatchSettings { AutoThreshold = 0.5 });
+            var matcher = new AlbumMatcher(mb, new MatchSettings { AutoThreshold = 0.5, EditionRule = editionRule });
 
             var scenarios = new (string Name, Func<TrackTags, TrackTags> Change)[]
             {
@@ -104,6 +111,7 @@ namespace LabelMaker.Calibrate
                         row.Reason = result.Reason;
                         row.BestId = result.Best?.Release.Id ?? string.Empty;
                         row.BestTitle = result.Best?.Release.Title ?? string.Empty;
+                        row.Interchangeable = result.InterchangeableEditions;
 
                         if (!truthCache.TryGetValue(album.TruthId, out var truth)) { truth = await mb.LookupReleaseAsync(album.TruthId); truthCache[album.TruthId] = truth; }
                         row.TruthTitle = truth?.Title ?? "(release not found)";
@@ -116,6 +124,16 @@ namespace LabelMaker.Calibrate
                                 var truthFit = ReleaseVerifier.Verify(truth, files);
                                 row.Correct = truthFit.WeakFiles == 0 && truthFit.Signature == result.Best.Signature;
                             }
+                        }
+                        if (truth != null)
+                        {
+                            var fit = ReleaseVerifier.Verify(truth, files);
+                            row.TruthScore = fit.Score;
+                            row.TruthWeak = fit.WeakFiles;
+                            row.TruthInCandidates = result.Candidates.Any(c => string.Equals(c.Release.Id, album.TruthId, StringComparison.OrdinalIgnoreCase));
+                            // "Same album": the matched release is the same release group as the library's and every file reads the same (title and place).
+                            row.SameAlbum = row.Correct || (result.Best != null && truth.ReleaseGroupId.Length > 0 &&
+                                result.Best.Release.ReleaseGroupId == truth.ReleaseGroupId && fit.WeakFiles == 0 && fit.TitleSignature == result.Best.TitleSignature);
                         }
                     }
                     catch (MusicBrainzUnavailableException e)
@@ -211,25 +229,49 @@ namespace LabelMaker.Calibrate
                 sb.AppendLine();
                 sb.AppendLine("Precision of automatic applying, by minimum score (applied = outcome Auto and score at or above the threshold):");
                 sb.AppendLine();
-                sb.AppendLine("| Threshold | Applied | Share of albums | Correct | Wrong | Precision |");
-                sb.AppendLine("|---|---|---|---|---|---|");
+                sb.AppendLine("| Threshold | Applied | Share of albums | Correct | Wrong | Precision | Same album | Precision (same album) |");
+                sb.AppendLine("|---|---|---|---|---|---|---|---|");
                 foreach (var tau in new[] { 0.60, 0.70, 0.80, 0.85, 0.90, 0.92, 0.94, 0.96, 0.98 })
                 {
                     var applied = set.Where(r => r.Outcome == "Auto" && r.Score >= tau).ToList();
                     int right = applied.Count(r => r.Correct);
                     string precision = applied.Count == 0 ? "n/a" : (100.0 * right / applied.Count).ToString("0.0", CultureInfo.InvariantCulture) + "%";
-                    sb.AppendLine($"| {tau:0.00} | {applied.Count} | {(100.0 * applied.Count / Math.Max(1, set.Count)).ToString("0", CultureInfo.InvariantCulture)}% | {right} | {applied.Count - right} | {precision} |");
+                    int sameAlbum = applied.Count(r => r.SameAlbum);
+                    string precisionAlbum = applied.Count == 0 ? "n/a" : (100.0 * sameAlbum / applied.Count).ToString("0.0", CultureInfo.InvariantCulture) + "%";
+                    sb.AppendLine($"| {tau:0.00} | {applied.Count} | {(100.0 * applied.Count / Math.Max(1, set.Count)).ToString("0", CultureInfo.InvariantCulture)}% | {right} | {applied.Count - right} | {precision} | {sameAlbum} | {precisionAlbum} |");
                 }
                 sb.AppendLine();
             }
 
+            sb.AppendLine("## Only albums whose library tags agree with the library's own release (answer key trustworthy)");
+            sb.AppendLine();
+            sb.AppendLine("An album counts here when the release id in its tags exists on MusicBrainz and its files fit that release at a score of 0.90 or more. Albums whose tags disagree with their own release id (edited tags, a release changed on MusicBrainz since, a deleted id) cannot say what the right answer is.");
+            sb.AppendLine();
+            foreach (var scenario in rows.Select(r => r.Scenario).Distinct())
+            {
+                var trusted = rows.Where(r => r.Scenario == scenario && r.TruthScore >= 0.90).ToList();
+                sb.AppendLine($"Scenario: {scenario}: {trusted.Count} trustworthy albums of {rows.Count(r => r.Scenario == scenario)}");
+                sb.AppendLine();
+                sb.AppendLine("| Threshold | Applied | Share | Correct | Wrong | Precision | Same album | Precision (same album) |");
+                sb.AppendLine("|---|---|---|---|---|---|---|---|");
+                foreach (var tau in new[] { 0.60, 0.80, 0.90, 0.92, 0.94, 0.96, 0.98 })
+                {
+                    var applied = trusted.Where(r => r.Outcome == "Auto" && r.Score >= tau).ToList();
+                    int right = applied.Count(r => r.Correct);
+                    int album = applied.Count(r => r.SameAlbum);
+                    string p1 = applied.Count == 0 ? "n/a" : (100.0 * right / applied.Count).ToString("0.0", CultureInfo.InvariantCulture) + "%";
+                    string p2 = applied.Count == 0 ? "n/a" : (100.0 * album / applied.Count).ToString("0.0", CultureInfo.InvariantCulture) + "%";
+                    sb.AppendLine($"| {tau:0.00} | {applied.Count} | {(100.0 * applied.Count / Math.Max(1, trusted.Count)).ToString("0", CultureInfo.InvariantCulture)}% | {right} | {applied.Count - right} | {p1} | {album} | {p2} |");
+                }
+                sb.AppendLine();
+            }
             sb.AppendLine("## Wrong automatic matches (the ones that matter most)");
             sb.AppendLine();
             var wrong = rows.Where(r => r.Outcome == "Auto" && !r.Correct).OrderByDescending(r => r.Score).ToList();
             if (wrong.Count == 0) sb.AppendLine("None.");
             foreach (var r in wrong)
             {
-                sb.AppendLine($"- [{r.Scenario}] score {r.Score:0.000}: \"{r.Artist} - {r.AlbumName}\" ({r.Files} file(s)) matched \"{r.BestTitle}\" {r.BestId}; the library says \"{r.TruthTitle}\" ({r.TruthStatus}). {r.Reason}");
+                sb.AppendLine($"- [{r.Scenario}] score {r.Score:0.000}: \"{r.Artist} - {r.AlbumName}\" ({r.Files} file(s)) matched \"{r.BestTitle}\" {r.BestId}; the library says \"{r.TruthTitle}\" ({r.TruthStatus}). Same album: {(r.SameAlbum ? "yes" : "no")}; library release scored {r.TruthScore:0.000} with {r.TruthWeak} weak file(s), among the top candidates: {(r.TruthInCandidates ? "yes" : "no")}. {r.Reason}");
             }
             sb.AppendLine();
 

@@ -48,6 +48,9 @@ namespace LabelMaker.Core.Matching
 
         /// <summary>Which recording sits where for these files. Two editions with the same signature are interchangeable for them.</summary>
         public string Signature { get; set; } = string.Empty;
+
+        /// <summary>Which track titles sit where for these files, ignoring which recording MusicBrainz lists. Editions with the same title signature read identically.</summary>
+        public string TitleSignature { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -101,6 +104,9 @@ namespace LabelMaker.Core.Matching
                 MinFileScore = lowest,
                 WeakFiles = weak,
                 Score = ReleaseScore(release, files, average),
+                TitleSignature = string.Join("|", assignments
+                    .OrderBy(a => a.File.Path, StringComparer.OrdinalIgnoreCase)
+                    .Select(a => a.Track == null ? "-" : $"{a.Disc}-{a.Track.Position}:{TitleNormaliser.Normalise(a.Track.Title)}")),
                 Signature = string.Join("|", assignments
                     .OrderBy(a => a.File.Path, StringComparer.OrdinalIgnoreCase)
                     .Select(a => a.Track == null ? "-" : $"{a.Track.RecordingId}@{a.Disc}-{a.Track.Position}")),

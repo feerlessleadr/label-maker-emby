@@ -20,6 +20,15 @@ namespace LabelMaker.Core.Matching
         NoMatch,
     }
 
+    public enum EditionRule
+    {
+        /// <summary>Strict: editions count as the same only when MusicBrainz lists the same recordings (a remaster is a different recording).</summary>
+        SameRecordings,
+
+        /// <summary>Editions with the same track titles at the same positions count as the same, and the preferred one is picked.</summary>
+        SameTitles,
+    }
+
     public sealed class MatchSettings
     {
         /// <summary>The best edition must score at least this much to be applied without asking.</summary>
@@ -36,6 +45,9 @@ namespace LabelMaker.Core.Matching
 
         /// <summary>How many release groups with the album's title are checked (several albums can share a title).</summary>
         public int MaxReleaseGroups { get; set; } = 3;
+
+        /// <summary>What makes two editions interchangeable for the files: the same recordings in the same places, or just the same track titles in the same places.</summary>
+        public EditionRule EditionRule { get; set; } = EditionRule.SameRecordings;
 
         /// <summary>Country codes in order of preference for choosing between identical editions ("XW" is worldwide).</summary>
         public IList<string> PreferredCountries { get; } = new List<string> { "US", "XW", "GB" };
@@ -182,8 +194,8 @@ namespace LabelMaker.Core.Matching
 
             // Other editions that fit about as well: the same recordings in the same places do not matter, different ones do.
             var rivals = ordered.Skip(1).Where(c => c.Score >= best.Score - _settings.Margin).ToList();
-            int identical = rivals.Count(c => c.Signature == best.Signature);
-            if (rivals.Any(c => c.Signature != best.Signature))
+            int identical = rivals.Count(c => Same(c, best));
+            if (rivals.Any(c => !Same(c, best)))
             {
                 return Result(MatchOutcome.NeedsReview, "Several editions fit these files about equally.", identical);
             }
@@ -195,6 +207,10 @@ namespace LabelMaker.Core.Matching
                     : "Every file fits one release clearly better than any other.",
                 identical);
         }
+
+        /// <summary>True when two editions read the same for the files under the chosen edition rule.</summary>
+        private bool Same(ReleaseVerification a, ReleaseVerification b) =>
+            _settings.EditionRule == EditionRule.SameTitles ? a.TitleSignature == b.TitleSignature : a.Signature == b.Signature;
 
         private int CountryRank(string country)
         {
