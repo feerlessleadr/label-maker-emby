@@ -17,6 +17,8 @@ namespace LabelMaker.Tests
     /// <summary>A throw-away inbox, library, journal folder and queue file, with a lane over them.</summary>
     internal sealed class InboxSandbox : IDisposable
     {
+        /// <summary>Test paths are written with backslashes; this makes them native on any system.</summary>
+        public static string Sep(string path) => path.Replace((char)92, Path.DirectorySeparatorChar);
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "LabelMaker-inbox-" + Guid.NewGuid().ToString("N"));
         public string Inbox => Path.Combine(Root, "inbox");
         public string Library => Path.Combine(Root, "library");
@@ -34,7 +36,7 @@ namespace LabelMaker.Tests
         /// <summary>A silent MP3 tagged like MusicGrabber output for the Insomniac album, at <paramref name="relativeFolder"/> under the inbox.</summary>
         public string AddTrack(string relativeFolder, string fileName, string title, int track, int disc = 1, string album = "Insomniac")
         {
-            var folder = Path.Combine(Inbox, relativeFolder);
+            var folder = Path.Combine(Inbox, InboxSandbox.Sep(relativeFolder));
             Directory.CreateDirectory(folder);
             var path = Path.Combine(folder, fileName);
             File.Copy(TestFiles.Fixture("silence.mp3"), path, overwrite: true);
@@ -48,7 +50,7 @@ namespace LabelMaker.Tests
 
         public string AddFile(string relativeFolder, string fileName, string content = "x")
         {
-            var folder = Path.Combine(Inbox, relativeFolder);
+            var folder = Path.Combine(Inbox, InboxSandbox.Sep(relativeFolder));
             Directory.CreateDirectory(folder);
             var path = Path.Combine(folder, fileName);
             File.WriteAllText(path, content);
@@ -102,7 +104,7 @@ namespace LabelMaker.Tests
 
             Assert.Equal(UnitKind.Album, unit.Kind);
             Assert.Equal(2, unit.Files.Count);
-            Assert.Equal(@"Albums\Green Day\Insomniac", unit.RelativeFolder);
+            Assert.Equal(InboxSandbox.Sep(@"Albums\Green Day\Insomniac"), unit.RelativeFolder);
             Assert.False(unit.HasTemporaryFiles);
         }
 
@@ -146,7 +148,7 @@ namespace LabelMaker.Tests
             s.AddTrack(@"Albums\Real", "01.mp3", "Brat", 2);
 
             var unit = Assert.Single(Scan(s));
-            Assert.Equal(@"Albums\Real", unit.RelativeFolder);
+            Assert.Equal(InboxSandbox.Sep(@"Albums\Real"), unit.RelativeFolder);
         }
 
         [Fact]
@@ -159,7 +161,7 @@ namespace LabelMaker.Tests
 
             var unit = Assert.Single(Scan(s));
 
-            Assert.Equal(@"Albums\Band\Big Album", unit.RelativeFolder);
+            Assert.Equal(InboxSandbox.Sep(@"Albums\Band\Big Album"), unit.RelativeFolder);
             Assert.Equal(3, unit.Files.Count);
         }
 
@@ -335,7 +337,7 @@ namespace LabelMaker.Tests
 
             Assert.Equal(QueueState.Ready, outcome.State);
             Assert.Contains("would tag and move 2 file(s)", outcome.Reason);
-            Assert.Equal(@"Green Day\Insomniac", outcome.Destination);
+            Assert.Equal(InboxSandbox.Sep(@"Green Day\Insomniac"), outcome.Destination);
             Assert.Empty(Directory.EnumerateFiles(s.Library, "*", SearchOption.AllDirectories));
             Assert.Equal(2, Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories).Count());
         }
@@ -523,7 +525,7 @@ namespace LabelMaker.Tests
             var item = new QueueStore(s.QueuePath).All().Single();
             Assert.Equal(QueueState.Ready, item.State);
             Assert.Equal("Insomniac", item.Match!.BestTitle);
-            Assert.Equal(@"Green Day\Insomniac", item.Destination);
+            Assert.Equal(InboxSandbox.Sep(@"Green Day\Insomniac"), item.Destination);
         }
 
         [Fact]
