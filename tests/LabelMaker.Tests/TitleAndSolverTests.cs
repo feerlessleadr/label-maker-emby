@@ -73,3 +73,45 @@ namespace LabelMaker.Tests
         }
     }
 }
+
+namespace LabelMaker.Tests
+{
+    public class AlbumNameCleanerTests
+    {
+        [Theory]
+        [InlineData("Insomniac [FLAC]", "Insomniac")]
+        [InlineData("Insomniac [FLAC] [24-96]", "Insomniac")]
+        [InlineData("Insomniac (320kbps)", "Insomniac")]
+        [InlineData("Insomniac (Deluxe Edition)", "Insomniac")]
+        [InlineData("Insomniac (Deluxe Edition) (Remastered)", "Insomniac")]
+        [InlineData("Insomniac - www.somesite.com", "Insomniac")]
+        [InlineData("Various Positions", "Various Positions")]
+        public void NoiseIsRemovedForTheSearch(string input, string expected)
+        {
+            Assert.Equal(expected, AlbumNameCleaner.ForSearch(input));
+        }
+
+        [Theory]
+        [InlineData("(What's the Story) Morning Glory?")]
+        [InlineData("Greatest Hits (Volume 2)")]
+        [InlineData("Songs from the Big Chair")]
+        public void RealPartsOfATitleAreKept(string input)
+        {
+            Assert.Equal(input, AlbumNameCleaner.ForSearch(input));
+        }
+
+        [Theory]
+        [InlineData("[FLAC]")]
+        [InlineData("(Deluxe Edition)")]
+        public void AnAlbumThatIsOnlyNoiseIsLeftAlone(string input)
+        {
+            Assert.Equal(input, AlbumNameCleaner.ForSearch(input));
+        }
+
+        [Fact]
+        public void EmptyGivesEmpty()
+        {
+            Assert.Equal(string.Empty, AlbumNameCleaner.ForSearch("  "));
+        }
+    }
+}

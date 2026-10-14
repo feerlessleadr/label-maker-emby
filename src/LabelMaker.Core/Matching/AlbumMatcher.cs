@@ -118,8 +118,9 @@ namespace LabelMaker.Core.Matching
                 return Finish(candidates, source, "These files have no album name to search for.");
             }
 
-            var groups = await _musicBrainz.SearchReleaseGroupsAsync(artist, album, 5, cancellation).ConfigureAwait(false);
-            foreach (var group in ChooseGroups(groups, album))
+            var searchAlbum = AlbumNameCleaner.ForSearch(album); // the noise ("[FLAC]", "(Deluxe Edition)") would make the search miss
+            var groups = await _musicBrainz.SearchReleaseGroupsAsync(artist, searchAlbum, 5, cancellation).ConfigureAwait(false);
+            foreach (var group in ChooseGroups(groups, searchAlbum))
             {
                 var releases = await _musicBrainz.BrowseOfficialReleasesAsync(group.Id, cancellation).ConfigureAwait(false);
                 foreach (var release in releases)
