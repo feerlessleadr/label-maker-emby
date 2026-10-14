@@ -21,6 +21,8 @@ namespace LabelMaker.Core.Tags
     /// </summary>
     public static class TrackTagFile
     {
+        private static readonly object WriteLock = new object();
+
         public static TrackTags Read(string path)
         {
             using var file = TagFile.Create(path);
@@ -61,29 +63,34 @@ namespace LabelMaker.Core.Tags
                 throw new ArgumentOutOfRangeException(nameof(options), "The ID3v2 version must be 3 or 4.");
             }
 
-            // Static settings of TagLibSharp: used for every MP3 saved from here on.
-            TagLib.Id3v2.Tag.DefaultVersion = options.Id3Version;
-            TagLib.Id3v2.Tag.ForceDefaultVersion = true;
-            TagLib.Id3v2.Tag.DefaultEncoding = TagLib.StringType.UTF8;
-
-            using var file = TagFile.Create(path);
-            var tag = file.Tag;
-            tag.Title = Text(tags.Title);
-            tag.Performers = Names(tags.Artist);
-            tag.AlbumArtists = Names(tags.AlbumArtist);
-            tag.Album = Text(tags.Album);
-            tag.Track = Unsigned(tags.TrackNumber);
-            tag.TrackCount = Unsigned(tags.TotalTracks);
-            tag.Disc = Unsigned(tags.DiscNumber);
-            tag.DiscCount = Unsigned(tags.TotalDiscs);
-            tag.Year = Unsigned(tags.Year);
-            tag.MusicBrainzReleaseId = string.IsNullOrWhiteSpace(tags.ReleaseMbid) ? null : tags.ReleaseMbid.Trim();
-
-            if (!options.WriteId3v1)
+            // TagLibSharp keeps the ID3 version and text encoding in static (process-wide) settings that it reads while saving, so two writes at once
+            // with different settings could corrupt each other. One write at a time (the pipeline writes one album at a time anyway).
+            lock (WriteLock)
             {
-                file.RemoveTags(TagLib.TagTypes.Id3v1);
+                // Static settings of TagLibSharp: used for every MP3 saved from here on.
+                TagLib.Id3v2.Tag.DefaultVersion = options.Id3Version;
+                TagLib.Id3v2.Tag.ForceDefaultVersion = true;
+                TagLib.Id3v2.Tag.DefaultEncoding = TagLib.StringType.UTF8;
+
+                using var file = TagFile.Create(path);
+                var tag = file.Tag;
+                tag.Title = Text(tags.Title);
+                tag.Performers = Names(tags.Artist);
+                tag.AlbumArtists = Names(tags.AlbumArtist);
+                tag.Album = Text(tags.Album);
+                tag.Track = Unsigned(tags.TrackNumber);
+                tag.TrackCount = Unsigned(tags.TotalTracks);
+                tag.Disc = Unsigned(tags.DiscNumber);
+                tag.DiscCount = Unsigned(tags.TotalDiscs);
+                tag.Year = Unsigned(tags.Year);
+                tag.MusicBrainzReleaseId = string.IsNullOrWhiteSpace(tags.ReleaseMbid) ? null : tags.ReleaseMbid.Trim();
+
+                if (!options.WriteId3v1)
+                {
+                    file.RemoveTags(TagLib.TagTypes.Id3v1);
+                }
+                file.Save();
             }
-            file.Save();
         }
 
         private static int? Positive(uint value) => value > 0 && value <= int.MaxValue ? (int)value : (int?)null;
