@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using LabelMaker.Core.Inbox;
 using LabelMaker.Core.Matching;
 using LabelMaker.Core.Models;
 using LabelMaker.Core.MusicBrainz;
@@ -48,6 +49,7 @@ namespace LabelMaker.Calibrate
             public string Error = string.Empty;
             public bool SameAlbum;
             public string Notes = string.Empty;
+            public string Via = string.Empty;
             public double TruthScore;
             public int TruthWeak;
             public bool TruthInCandidates;
@@ -81,10 +83,24 @@ namespace LabelMaker.Calibrate
             var mb = new MusicBrainzClient(handler, "LabelMaker-calibrate/0.1 (feerlessleadr@users.noreply.github.com)") { MinInterval = TimeSpan.Zero, MaxRetries = 6 };
             var matcher = new AlbumMatcher(mb, new MatchSettings { AutoThreshold = 0.5, EditionRule = editionRule });
 
-            var scenarios = new (string Name, Func<TrackTags, TrackTags> Change)[]
+            // A release id that belongs to a different album of the set, for the "wrong id" scenarios.
+            var truthIds = answered.Select(a => a.TruthId).Distinct().ToList();
+            string WrongId(Album a) => truthIds.Count < 2 ? string.Empty : truthIds[(truthIds.IndexOf(a.TruthId) + 1) % truthIds.Count];
+            AlbumInfo Hint(Album a, string id) => new AlbumInfo
             {
-                ("tags as they are", t => t),
-                ("album name with [FLAC] noise", t => Clone(t, album: t.Album + " [FLAC]")),
+                Artist = ReleaseVerifier.MostCommon(a.Tracks.Select(t => t.AlbumArtist.Length > 0 ? t.AlbumArtist : t.Artist)),
+                Album = ReleaseVerifier.MostCommon(a.Tracks.Select(t => t.Album)),
+                ReleaseMbid = id,
+            };
+
+            var scenarios = new (string Name, Func<Album, TrackTags, TrackTags> Change, Func<Album, AlbumInfo?> Hint)[]
+            {
+                ("tags as they are", (a, t) => t, a => null),
+                ("album name with [FLAC] noise", (a, t) => Clone(t, album: t.Album + " [FLAC]"), a => null),
+                ("MusicGrabber hint, right release id", (a, t) => t, a => Hint(a, a.TruthId)),
+                ("MusicGrabber hint, wrong release id", (a, t) => t, a => Hint(a, WrongId(a))),
+                ("release id in the tags, right", (a, t) => Clone(t, releaseMbid: a.TruthId), a => null),
+                ("release id in the tags, wrong", (a, t) => Clone(t, releaseMbid: WrongId(a)), a => null),
             };
 
             var truthCache = new Dictionary<string, ReleaseInfo?>();
@@ -97,7 +113,7 @@ namespace LabelMaker.Calibrate
                 var subset = Subset(album);
                 foreach (var scenario in scenarios)
                 {
-                    var files = subset.Select(i => new AlbumFile(album.Names[i], scenario.Change(album.Tracks[i]))).ToList();
+                    var files = subset.Select(i => new AlbumFile(album.Names[i], scenario.Change(album, album.Tracks[i]))).ToList();
                     var row = new Row
                     {
                         Source = album.Source, Folder = album.Folder, Scenario = scenario.Name, Files = files.Count,
@@ -106,13 +122,14 @@ namespace LabelMaker.Calibrate
                     };
                     try
                     {
-                        var result = await matcher.MatchAsync(files, null);
+                        var result = await matcher.MatchAsync(files, scenario.Hint(album));
                         row.Outcome = result.Outcome.ToString();
                         row.Score = result.Best?.Score ?? 0;
                         row.Reason = result.Reason;
                         row.BestId = result.Best?.Release.Id ?? string.Empty;
                         row.BestTitle = result.Best?.Release.Title ?? string.Empty;
                         row.Interchangeable = result.InterchangeableEditions;
+                        row.Via = result.Source;
                         row.Notes = string.Join(" / ", result.Notes);
 
                         if (!truthCache.TryGetValue(album.TruthId, out var truth)) { truth = await mb.LookupReleaseAsync(album.TruthId); truthCache[album.TruthId] = truth; }
@@ -186,10 +203,10 @@ namespace LabelMaker.Calibrate
         private static int? Num(JsonElement e, string name) =>
             e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : (int?)null;
 
-        private static TrackTags Clone(TrackTags t, string? album = null) => new TrackTags
+        private static TrackTags Clone(TrackTags t, string? album = null, string? releaseMbid = null) => new TrackTags
         {
             Title = t.Title, Artist = t.Artist, AlbumArtist = t.AlbumArtist, Album = album ?? t.Album, TrackNumber = t.TrackNumber,
-            TotalTracks = t.TotalTracks, DiscNumber = t.DiscNumber, TotalDiscs = t.TotalDiscs, Year = t.Year, DurationMs = t.DurationMs,
+            TotalTracks = t.TotalTracks, DiscNumber = t.DiscNumber, TotalDiscs = t.TotalDiscs, Year = t.Year, DurationMs = t.DurationMs, ReleaseMbid = releaseMbid ?? string.Empty,
         };
 
         /// <summary>The files used: all of them for a small album, otherwise 1 to 6 chosen by a repeatable random draw (downloads arrive in pieces).</summary>
@@ -221,6 +238,8 @@ namespace LabelMaker.Calibrate
             {
                 var set = rows.Where(r => r.Scenario == scenario).ToList();
                 sb.AppendLine($"## Scenario: {scenario} ({set.Count} albums)");
+                sb.AppendLine();
+                sb.AppendLine($"Decided straight from a release id hint (no search): {set.Count(r => r.Via == "albuminfo" || r.Via == "tags")} of {set.Count}.");
                 sb.AppendLine();
                 sb.AppendLine("| Outcome | Albums | Best match correct |");
                 sb.AppendLine("|---|---|---|");

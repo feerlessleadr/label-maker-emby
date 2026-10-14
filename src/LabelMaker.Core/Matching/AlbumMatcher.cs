@@ -148,11 +148,45 @@ namespace LabelMaker.Core.Matching
                             Reason = "MusicGrabber named this release and every file fits it.",
                             Best = verified,
                             Candidates = new[] { verified },
+                            Notes = new[] { "MusicGrabber's release id was looked up and every file fits it" },
                         };
                     }
+                    notes.Add($"MusicGrabber's release id points at \"{hinted.Title}\", which fits the files only at {verified.Score:0.00} with {verified.WeakFiles} weak file(s), so it is not trusted on its own");
                     candidates.Add(verified); // shown in review even though it did not fit well enough on its own
                 }
+                else
+                {
+                    notes.Add("MusicGrabber's release id was not found on MusicBrainz");
+                }
             }
+
+            // 1b. Release ids already in the files' tags (a Picard-tagged file carries its release id): looked up and checked exactly like the hint
+            // above. If the files of one folder carry different ids, nothing is applied automatically: a person decides which album they belong to.
+            var tagIds = files.Select(f => (f.Tags.ReleaseMbid ?? string.Empty).Trim().ToLowerInvariant())
+                .Where(id => Guid.TryParse(id, out _)).Distinct().ToList();
+            bool mixedIds = tagIds.Count > 1;
+            foreach (var id in tagIds)
+            {
+                if (info != null && string.Equals(info.ReleaseMbid, id, StringComparison.OrdinalIgnoreCase)) continue; // already looked up above
+                var tagged = await _musicBrainz.LookupReleaseAsync(id, cancellation).ConfigureAwait(false);
+                if (tagged == null) { notes.Add($"the release id {id} in the tags was not found on MusicBrainz"); continue; }
+                var verifiedTag = ReleaseVerifier.Verify(tagged, files, _settings.MinFileScore);
+                if (!mixedIds && verifiedTag.WeakFiles == 0 && verifiedTag.Score >= _settings.AutoThreshold)
+                {
+                    return new MatchResult
+                    {
+                        Outcome = MatchOutcome.Auto,
+                        Source = "tags",
+                        Reason = "The release id already in the tags names this release and every file fits it.",
+                        Best = verifiedTag,
+                        Candidates = new[] { verifiedTag },
+                        Notes = new[] { "the release id in the tags was looked up and every file fits it" },
+                    };
+                }
+                notes.Add($"the release id in the tags points at \"{tagged.Title}\", which fits the files only at {verifiedTag.Score:0.00} with {verifiedTag.WeakFiles} weak file(s)");
+                if (!candidates.Any(c => string.Equals(c.Release.Id, tagged.Id, StringComparison.OrdinalIgnoreCase))) candidates.Add(verifiedTag);
+            }
+            if (mixedIds) notes.Add($"the files carry {tagIds.Count} different release ids");
 
             // 2. Search by album and artist, then check every official edition of the best release groups.
             var artist = ReleaseVerifier.MostCommon(files.Select(f => f.Tags.AlbumArtist.Length > 0 ? f.Tags.AlbumArtist : f.Tags.Artist));
@@ -230,6 +264,11 @@ namespace LabelMaker.Core.Matching
             {
                 result.Outcome = MatchOutcome.NeedsReview;
                 result.Reason = "MusicBrainz lists this album under a different name or artist than your tags say, so please check it.";
+            }
+            if (mixedIds && result.Outcome == MatchOutcome.Auto)
+            {
+                result.Outcome = MatchOutcome.NeedsReview;
+                result.Reason = "The files in this folder carry different MusicBrainz release ids, so please check which album they belong to.";
             }
             return result;
         }

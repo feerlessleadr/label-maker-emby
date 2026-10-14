@@ -22,7 +22,8 @@ While **dry run** is on (it is on by default) nothing is ever changed: Label Mak
 ## 2. Where the candidates come from
 1. **MusicGrabber's hint.** If the folder has a hidden `.albuminfo` file, it names the exact release MusicGrabber chose. Label Maker looks that one release up and
    checks your files really fit it. If they do, that is the answer (one lookup, no searching). If they do not, the hint is ignored and it searches.
-2. **A search, with fallbacks.** Label Maker looks for the album on MusicBrainz by name and artist. The most exact search ("this album name AND this artist") is tried first, but MusicBrainz
+2. **Ids already in the tags.** Files that were tagged by Picard (or a similar tool) already carry a MusicBrainz release id. Label Maker looks that release up and checks your files really fit it, exactly as for MusicGrabber's hint. If they fit, that is the answer, with no searching. If they do not (the id is stale, or belongs to another album), the id is ignored and it searches. If the files in one folder carry **different** release ids, Label Maker never applies the album automatically and asks you which album they belong to.
+3. **A search, with fallbacks.** Label Maker looks for the album on MusicBrainz by name and artist. The most exact search ("this album name AND this artist") is tried first, but MusicBrainz
    often finds nothing with it (artists are stored under many spellings), so if nothing plausible comes back it tries looser searches, in this order: the album name alone (it then checks the artist
    itself), the album and artist words with punctuation removed, and finally every album by that artist. Each search is also tried with other spellings of the album name: the name as written
    (after removing noise such as "[FLAC]", "(320kbps)", "(Deluxe Edition)", "(sfw)" or a web address), then without any trailing "(...)" such as "(Green)" or "(Soundtrack from the Film)", then
@@ -32,7 +33,7 @@ While **dry run** is on (it is on by default) nothing is ever changed: Label Mak
    Soundtrack") and its artist plausibly matches (similar names, a shared name such as "Alan Menken" in "Alan Menken & Howard Ashman", or "Various Artists"). If no album passes both tests,
    Label Maker also considers an album with the right name under another artist name ("mgk" is "Machine Gun Kelly" on MusicBrainz) and an album by the same artist under a similar name
    (renamed albums such as "Greatest Hits - Chapter One", listed on MusicBrainz as "The Hits - Chapter One"). Those are always sent to review, never applied automatically (rule 4 below).
-   It checks **every official edition** of up to **5 different albums with that name** (a band can have a single, two albums and a live record all called "High Voltage").3. Only **official** releases are considered. Bootlegs, promotional copies and withdrawn releases are skipped, because they show up at the top of searches and are usually wrong.
+   It checks **every official edition** of up to **5 different albums with that name** (a band can have a single, two albums and a live record all called "High Voltage").4. Only **official** releases are considered. Bootlegs, promotional copies and withdrawn releases are skipped, because they show up at the top of searches and are usually wrong.
 
 ## 3. How a file is matched to a track
 Partial albums are normal: you might have 3 of 14 songs. So missing tracks cost nothing. What matters is that **every file you have lands on its own,
@@ -62,8 +63,8 @@ An album is applied automatically only when **all** of these hold. If any one fa
    *If it fails:* "1 of 4 files could not be matched to a track of the best release."
 3. **No close rival.** If another edition fits almost as well (within **0.05**) and is a *real* alternative, Label Maker will not guess.
    *If it fails:* "Several editions fit these files about equally."
-4. **The album is listed under the same name and artist as your tags.** If it was found only because of a looser search (another artist name, a renamed album), a person confirms it.
-   *If it fails:* "MusicBrainz lists this album under a different name or artist than your tags say, so please check it."
+4. **The album is listed under the same name and artist as your tags.** If it was found only because of a looser search (another artist name, a renamed album), a person confirms it. The same goes for a folder whose files carry different MusicBrainz release ids.
+   *If it fails:* "MusicBrainz lists this album under a different name or artist than your tags say, so please check it." or "The files in this folder carry different MusicBrainz release ids, so please check which album they belong to."
 5. **The lane allows it.** Each lane (inbox to library folder) can be set to "always ask me".
 6. **Dry run is off.**
 7. **The destination is free.** If a file with that name is already in the library, nothing is written ("is already in the library"), and nothing is ever overwritten.
@@ -95,6 +96,7 @@ The plain sentences you will see, and what each means:
 | What you see | What it means | What to do |
 |---|---|---|
 | "MusicBrainz lists this album under a different name or artist than your tags say, so please check it." | The album was found only by a looser search: another artist name ("mgk" for "Machine Gun Kelly") or a renamed album. | Check that it is the right album, then approve it or pick another. |
+| "The files in this folder carry different MusicBrainz release ids, so please check which album they belong to." | Some files say they belong to one release, others to another (a folder mixing editions or albums). | Pick the right edition in the review screen, or split the folder. |
 | "Several editions fit these files about equally." | Two or more editions fit and they list different titles or order for your files. | Pick the edition in the review screen. |
 | "1 of 4 files could not be matched to a track of the best release." | One file does not belong to the album Label Maker found (or the release does not list it). | Look at that file: wrong album, a bonus track, or a mislabeled file. Fix the tag or keep the album as is. |
 | "The best match is only probable." | The best edition scored under the automatic threshold. | Check the suggestion and approve it, pick another, or search by hand. |
@@ -120,7 +122,8 @@ On 287 albums from the owner's library (the real albums average about 3 tracks, 
 - **Strict edition rule:** 73% applied automatically, all exactly right (199 of 199, even down to the recording ids).
 - **Nothing found:** 1 album of 287 (0.3%), a brand-new soundtrack whose name clashes with many other albums. Before the search fallbacks it was 14 (5%).
 - The rest, about 14% of albums, went to review with a reason; in about 4 of 5 of those the best candidate shown was already the right one.
-- Not yet measured: albums with no MusicBrainz id in their tags (mostly the kids library), and MusicGrabber's own release id hint on a real inbox.
+- **A release id hint** (from MusicGrabber's `.albuminfo` or already in the tags): with the right id, 280 of 287 albums were decided with a single lookup and no search, 99% of the trustworthy albums were applied automatically, and none was wrong. With a **wrong** id (the id of a different album) the hint was ignored every time and the result was exactly what no hint gives (85%, none wrong): a bad hint cannot cause a wrong automatic apply.
+- Not yet measured: albums with no MusicBrainz id in their tags (mostly the kids library), and MusicGrabber's own hint on a real inbox (the test used the library's own ids in its place).
 ## 9. Glossary
 - **Release**: one specific published version of an album, with a fixed song list. Has a MusicBrainz id.
 - **Edition**: informal word for a release when comparing versions of the same album (US, UK, remaster, deluxe).
