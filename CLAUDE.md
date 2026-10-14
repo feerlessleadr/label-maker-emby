@@ -1,10 +1,11 @@
 # Label Maker (Emby plugin): instructions for Claude
 
-**Start with `docs/HANDOFF.md`** (state, owner environment, decisions, working rules, next steps), then `docs/PHASE0.md` (spike results) and `docs/DESIGN.md` (the full design and plan).
+**Start with `docs/HANDOFF.md` section 0** (the current snapshot: state, decisions, what the owner still has to provide, roadmap, how to resume, traps), then `docs/MATCHING-RULES.md` (every rule in plain English: keep it in step with the code), `docs/NOTIFICATIONS.md` (the push contract the Embidextrous session codes against), `docs/PHASE0.md` and `docs/DESIGN.md`.
 
-- Status (2026-10-14): design and Phase 0 done; engine in `src/LabelMaker.Core` has naming, tags, MusicBrainz client, matcher, planner and applier (see HANDOFF sections 11 and 12). No inbox scanner, plugin shell or UI yet.
+- Status (2026-10-14): the engine in `src/LabelMaker.Core` is built and tested (197 tests): naming, tags, MusicBrainz client with search cascade, matcher, hints, planner and applier with undo, inbox watcher and queue. **Not built:** the Emby plugin shell, settings page, review screen, push notifications (designed in `docs/NOTIFICATIONS.md`), cover art, the permanent MusicBrainz cache. See HANDOFF section 0.
 - Template to copy: `C:\dev\hall-pass-emby` (see its `docs/HANDOFF.md` and `CLAUDE.md`). The phone app is `C:\dev\embidextrous` (its `docs/notifications-plan.md` holds the notification-rules requirement).
 - Commits are authored as `feerlessleadr <github@thecgkg.com>` (already set in this clone). Never the work email.
 - Release only when the owner says "publish it" (notes committed first, CI and CodeQL green on the exact commit, tag = AssemblyVersion).
 - Never put the owner's LAN IP, share names, Windows username or Picard.ini in tracked files: they live in git-ignored `docs/local/` (ENVIRONMENT.md, Picard.ini); tracked docs use placeholders such as `<server>`.
 - Plugin facts that bite: embed TagLibSharp and resolve it with `AssemblyLoadContext.Default.Resolving`; plugins have no `Assembly.Location`; admin pushes reach administrator user sessions only; Emby shows new folders 1.5 to 2 minutes after `ReportFileSystemChangeComplete`.
+- Work habits that matter here: commit with `git commit -F <file>` (never a here-string argument); a PowerShell script that edits files with .NET calls must start from the repo root; keep `docs/MATCHING-RULES.md` and `docs/HANDOFF.md` current in the same commit as the change; tests run one at a time; never edit the Embidextrous repo from here (change `docs/NOTIFICATIONS.md` and tell the owner instead).

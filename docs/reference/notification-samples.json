@@ -1,0 +1,112 @@
+{
+  "_about": "Sample payloads for the Label Maker notification contract (docs/NOTIFICATIONS.md). DESIGN ONLY: the plugin does not send these yet. Use them as fixtures for parser tests. Every pushed message is {\"MessageType\": <name>, \"Data\": <object>}; the objects below are the Data part. Album and artist names are made up. The key LabelMaker.AutoApplied.dryRun is only a second sample of the same message (LabelMaker.AutoApplied with Mode WouldApply).",
+  "info": {
+    "PluginVersion": "1.0.0.0",
+    "ApiLevel": 1,
+    "Features": ["events", "catalog", "status"]
+  },
+  "pushed": {
+    "LabelMaker.NeedsReview": {
+      "ApiLevel": 1, "Seq": 41, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0001", "ServerTimeUtc": "2026-10-14T18:30:12Z", "Event": "NeedsReview",
+      "Count": 7, "NoMatchCount": 2, "New": 3,
+      "Lanes": [ { "LaneId": "main", "LaneName": "Main", "Count": 5 }, { "LaneId": "kids", "LaneName": "Kids", "Count": 2 } ],
+      "Albums": [
+        { "Id": "9f3a1c0e5d7b4a21c8e1", "Artist": "Example Band", "Album": "Example Album", "LaneId": "main", "Reason": "Several editions fit these files about equally." },
+        { "Id": "0c4e8a7b1d2f9e3a6b5c", "Artist": "Another Artist", "Album": "Another Record", "LaneId": "kids", "Reason": "Nothing on MusicBrainz fits these files well enough." }
+      ]
+    },
+    "LabelMaker.AutoApplied": {
+      "ApiLevel": 1, "Seq": 42, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0002", "ServerTimeUtc": "2026-10-14T18:31:40Z", "Event": "AutoApplied",
+      "Mode": "Applied", "Count": 12,
+      "Albums": [ { "Id": "a1b2c3d4e5f60718293a", "Artist": "Example Band", "Album": "Example Album", "LaneId": "main", "Files": 3 } ]
+    },
+    "LabelMaker.AutoApplied.dryRun": {
+      "ApiLevel": 1, "Seq": 43, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0003", "ServerTimeUtc": "2026-10-14T18:32:10Z", "Event": "AutoApplied",
+      "Mode": "WouldApply", "Count": 4,
+      "Albums": [ { "Id": "a1b2c3d4e5f60718293b", "Artist": "Example Band", "Album": "Example Album", "LaneId": "main", "Files": 2 } ]
+    },
+    "LabelMaker.AlbumFailed": {
+      "ApiLevel": 1, "Seq": 44, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0004", "ServerTimeUtc": "2026-10-14T18:33:00Z", "Event": "AlbumFailed",
+      "Id": "b2c3d4e5f6071829304a", "Artist": "Example Band", "Album": "Example Album", "LaneId": "main",
+      "Reason": "1 file(s) could not be read (09 - Broken.mp3). Fix or remove them and the album is checked again.", "Retryable": true
+    },
+    "LabelMaker.LaneProblem": {
+      "ApiLevel": 1, "Seq": 45, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0005", "ServerTimeUtc": "2026-10-14T18:34:00Z", "Event": "LaneProblem",
+      "LaneId": "kids", "LaneName": "Kids", "Kind": "LibraryUnreachable",
+      "Message": "The library folder for the Kids lane cannot be reached. Check that the share is online and that the account Emby runs as can write to it."
+    },
+    "LabelMaker.LaneRecovered": {
+      "ApiLevel": 1, "Seq": 46, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0006", "ServerTimeUtc": "2026-10-14T18:40:00Z", "Event": "LaneRecovered",
+      "LaneId": "kids", "LaneName": "Kids", "Kind": "LibraryUnreachable"
+    },
+    "LabelMaker.ServiceTrouble": {
+      "ApiLevel": 1, "Seq": 47, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0007", "ServerTimeUtc": "2026-10-14T19:00:00Z", "Event": "ServiceTrouble",
+      "SinceUtc": "2026-10-14T18:44:00Z", "WaitingCount": 9
+    },
+    "LabelMaker.ServiceRecovered": {
+      "ApiLevel": 1, "Seq": 48, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0008", "ServerTimeUtc": "2026-10-14T19:10:00Z", "Event": "ServiceRecovered"
+    },
+    "LabelMaker.PassFinished": {
+      "ApiLevel": 1, "Seq": 49, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0009", "ServerTimeUtc": "2026-10-14T19:11:00Z", "Event": "PassFinished",
+      "Found": 14, "Queued": 3, "Processed": 5, "NeedsReview": 2, "Failed": 0
+    }
+  },
+  "status": {
+    "ApiLevel": 1, "Version": 128, "ServerTimeUtc": "2026-10-14T19:11:05Z", "Paused": false, "DryRun": true, "LastPassUtc": "2026-10-14T19:11:00Z", "MatchingVersion": "matching-v3",
+    "Counts": { "Waiting": 1, "NeedsReview": 5, "NoMatch": 2, "Ready": 4, "Applying": 0, "Done": 37, "Failed": 0, "Duplicate": 1, "Skipped": 0 },
+    "Lanes": [
+      { "LaneId": "main", "LaneName": "Main", "Counts": { "NeedsReview": 5, "Ready": 4, "Done": 30 }, "Problems": [] },
+      { "LaneId": "kids", "LaneName": "Kids", "Counts": { "NoMatch": 2, "Done": 7 }, "Problems": [ { "Kind": "LowDiskSpace", "Message": "Less than 1 GB is free on the library disk for the Kids lane." } ] }
+    ],
+    "Service": { "MusicBrainz": "Ok", "SinceUtc": null },
+    "LatestSeq": 49
+  },
+  "events": {
+    "LatestSeq": 49,
+    "Truncated": false,
+    "Events": [
+      { "Seq": 48, "Name": "LabelMaker.ServiceRecovered", "AtUtc": "2026-10-14T19:10:00Z", "Data": { "ApiLevel": 1, "Seq": 48, "EventId": "5b1d2b2a-9a4e-4a3e-8d5e-0d6c8b6e0008", "ServerTimeUtc": "2026-10-14T19:10:00Z", "Event": "ServiceRecovered" } }
+    ]
+  },
+  "catalog": {
+    "ApiLevel": 1,
+    "Service": { "Id": "LabelMaker", "Title": "Label Maker", "ChannelId": "music-ingest", "ChannelTitle": "Music ingest" },
+    "Events": [
+      {
+        "Id": "LabelMaker.NeedsReview", "Title": "Albums need review",
+        "Description": "Sent when downloaded albums could not be matched with certainty and wait for you.",
+        "Params": [ { "Name": "MinCount", "Label": "When this many albums need review", "Type": "int", "Min": 1, "Max": 500, "Default": 1 } ],
+        "DefaultRule": { "Enabled": true, "Params": { "MinCount": 1 } },
+        "LockScreenText": "Music needs review. Unlock to see which.", "OpensTab": "LabelMaker/Review"
+      },
+      {
+        "Id": "LabelMaker.AutoApplied", "Title": "An album was tagged automatically",
+        "Description": "Sent after a pass that tagged and filed albums by itself (or, in a dry run, would have). One summary per pass.",
+        "Params": [],
+        "DefaultRule": { "Enabled": false, "Params": {} },
+        "LockScreenText": "Music was filed. Unlock to see what.", "OpensTab": "LabelMaker/Done"
+      },
+      {
+        "Id": "LabelMaker.AlbumFailed", "Title": "An album failed",
+        "Description": "Sent when an album could not be handled and needs fixing (a damaged file, a folder that cannot be written).",
+        "Params": [],
+        "DefaultRule": { "Enabled": true, "Params": {} },
+        "LockScreenText": "An album failed. Unlock to see which.", "OpensTab": "LabelMaker/Review"
+      },
+      {
+        "Id": "LabelMaker.LaneProblem", "Title": "A lane has a problem",
+        "Description": "Sent when an inbox or library folder cannot be reached or written, or the disk is nearly full.",
+        "Params": [],
+        "DefaultRule": { "Enabled": true, "Params": {} },
+        "LockScreenText": "A music lane has a problem. Unlock to see which.", "OpensTab": "LabelMaker/Summary"
+      },
+      {
+        "Id": "LabelMaker.ServiceTrouble", "Title": "Music lookups are stuck",
+        "Description": "Sent when MusicBrainz could not be reached for a while and albums are waiting.",
+        "Params": [ { "Name": "Minutes", "Label": "After this many minutes", "Type": "int", "Min": 5, "Max": 240, "Default": 15 } ],
+        "DefaultRule": { "Enabled": false, "Params": { "Minutes": 15 } },
+        "LockScreenText": "Music lookups are stuck. Unlock for details.", "OpensTab": "LabelMaker/Summary"
+      }
+    ]
+  }
+}
