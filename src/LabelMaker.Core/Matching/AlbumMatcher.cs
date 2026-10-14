@@ -69,9 +69,9 @@ namespace LabelMaker.Core.Matching
 
         /// <summary>
         /// Several different albums can share a name (a studio album and a live album, or two artists' "Greatest Hits"). Label Maker checks the
-        /// editions of up to this many albums with the right name, so the wrong one is never chosen just because it was found first. Default 3.
+        /// editions of up to this many albums with the right name, so the wrong one is never chosen just because it was found first (a band can have a single, two albums and a live record all called "High Voltage"). Default 5.
         /// </summary>
-        public int MaxReleaseGroups { get; set; } = 3;
+        public int MaxReleaseGroups { get; set; } = 5;
 
         /// <summary>How Label Maker decides that two editions of an album are interchangeable for your files. See <see cref="EditionRule"/>.</summary>
         public EditionRule EditionRule { get; set; } = EditionRule.SameTitles;
@@ -100,6 +100,9 @@ namespace LabelMaker.Core.Matching
 
         /// <summary>The checked editions, best first, for the review screen.</summary>
         public IReadOnlyList<ReleaseVerification> Candidates { get; set; } = Array.Empty<ReleaseVerification>();
+
+        /// <summary>What was searched and what came back, in plain lines. Shown when someone asks why an album was not matched.</summary>
+        public IReadOnlyList<string> Notes { get; set; } = Array.Empty<string>();
     }
 
     /// <summary>
@@ -126,6 +129,7 @@ namespace LabelMaker.Core.Matching
             }
 
             var candidates = new List<ReleaseVerification>();
+            var notes = new List<string>();
             string source = "search";
 
             // 1. The release MusicGrabber chose: one lookup, then check the files really fit it.
@@ -157,28 +161,142 @@ namespace LabelMaker.Core.Matching
             if (album.Length == 0 && info != null) album = info.Album;
             if (album.Length == 0)
             {
-                return Finish(candidates, source, "These files have no album name to search for.");
+                notes.Add("the files have no album name");
+                var none = Finish(candidates, source, "These files have no album name to search for.");
+                none.Notes = notes;
+                return none;
             }
 
-            var searchAlbum = AlbumNameCleaner.ForSearch(album); // the noise ("[FLAC]", "(Deluxe Edition)") would make the search miss
-            var groups = await _musicBrainz.SearchReleaseGroupsAsync(artist, searchAlbum, 5, cancellation).ConfigureAwait(false);
-            foreach (var group in ChooseGroups(groups, searchAlbum))
+            // The exact "album AND artist" search is precise but often finds nothing, so it is tried first and the looser searches follow, each
+            // with the album name as it is (noise such as "[FLAC]" removed), then without any trailing "(...)", then with 2 and II swapped.
+            // Every album a search leaves is checked track by track. The cascade stops as soon as some edition fits the files well enough to
+            // suggest (the review threshold); until then the next search is tried, up to a fixed number of searches.
+            var browsed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var relaxedGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // albums found only because the name or artist differs from the tags
+            int attempts = 0;
+            const int MaxSearches = 8;
+            bool enough = false;
+            foreach (var variant in AlbumNameVariants(album))
             {
-                var releases = await _musicBrainz.BrowseOfficialReleasesAsync(group.Id, cancellation).ConfigureAwait(false);
-                foreach (var release in releases)
+                foreach (var shape in SearchShapes(artist))
                 {
-                    if (candidates.Any(c => string.Equals(c.Release.Id, release.Id, StringComparison.OrdinalIgnoreCase))) continue;
-                    candidates.Add(ReleaseVerifier.Verify(release, files, _settings.MinFileScore));
+                    if (attempts >= MaxSearches) break;
+                    attempts++;
+                    int limit = shape == SearchShape.QuotedAlbumAndArtist ? 5 : 25;
+                    var groups = await _musicBrainz.SearchReleaseGroupsAsync(artist, variant, limit, shape, cancellation).ConfigureAwait(false);
+
+                    // Albums whose name and artist both fit; if there are none, albums whose name fits (an artist can be credited under another
+                    // name, "mgk" for "Machine Gun Kelly"): those can only reach review, because the artist part of the score stays low.
+                    var chosen = ChooseGroups(groups, variant, artist, requireArtist: true).ToList();
+                    bool relaxed = false;
+                    if (chosen.Count == 0)
+                    {
+                        // An album can be filed under a slightly different name (renamed, or a regional title): same artist, similar name.
+                        var renamed = groups.Where(g => ArtistsStronglyAgree(artist, g.ArtistCredit) && TitleNormaliser.AlbumSimilarity(g.Title, variant) >= 0.5)
+                            .OrderByDescending(g => TitleNormaliser.AlbumSimilarity(g.Title, variant)).Take(2);
+                        chosen = renamed.Concat(ChooseGroups(groups, variant, artist, requireArtist: false))
+                            .GroupBy(g => g.Id).Select(g => g.First()).Take(_settings.MaxReleaseGroups).ToList();
+                        relaxed = chosen.Count > 0;
+                    }
+                    notes.Add($"search {attempts} ({Describe(shape)}; album \"{variant}\", artist \"{artist}\"): {groups.Count} album(s) came back, {chosen.Count} kept{(relaxed ? " (name only, artist differs)" : string.Empty)}"
+                        + (groups.Count == 0 ? string.Empty : ": " + string.Join("; ", groups.Take(5).Select(g => $"\"{g.Title}\" by {g.ArtistCredit} (score {g.Score}, {g.PrimaryType})"))));
+
+                    foreach (var group in chosen)
+                    {
+                        if (relaxed) relaxedGroups.Add(group.Id);
+                        if (!browsed.Add(group.Id)) continue;
+                        var releases = await _musicBrainz.BrowseOfficialReleasesAsync(group.Id, cancellation).ConfigureAwait(false);
+                        notes.Add($"\"{group.Title}\" by {group.ArtistCredit} has {releases.Count} official edition(s)");
+                        foreach (var release in releases)
+                        {
+                            if (candidates.Any(c => string.Equals(c.Release.Id, release.Id, StringComparison.OrdinalIgnoreCase))) continue;
+                            candidates.Add(ReleaseVerifier.Verify(release, files, _settings.MinFileScore));
+                        }
+                    }
+                    if (candidates.Count > 0 && candidates.Max(c => c.Score) >= _settings.ReviewThreshold) { enough = true; break; }
                 }
+                if (enough || attempts >= MaxSearches) break;
             }
-            return Finish(candidates, source, "No release was found for this album.");
+            if (candidates.Count > 0)
+            {
+                var top = candidates.OrderByDescending(c => c.Score).First();
+                notes.Add($"best edition checked: \"{top.Release.Title}\" by {top.Release.ArtistCredit} ({top.Release.Country} {top.Release.Date}), score {top.Score:0.00}, tracks {top.TrackScore:0.00}, {top.WeakFiles} weak file(s)");
+            }            var result = Finish(candidates, source, "No release was found for this album.");
+            result.Notes = notes;
+
+            // An album found only through the relaxed passes (MusicBrainz lists it under another name or artist than the tags say) is never
+            // applied without a person looking, however well the tracks fit.
+            if (result.Outcome == MatchOutcome.Auto && result.Best != null && relaxedGroups.Contains(result.Best.Release.ReleaseGroupId))
+            {
+                result.Outcome = MatchOutcome.NeedsReview;
+                result.Reason = "MusicBrainz lists this album under a different name or artist than your tags say, so please check it.";
+            }
+            return result;
         }
 
         /// <summary>Groups whose title is close to the album, plain albums before compilations and live records.</summary>
-        private IEnumerable<ReleaseGroupHit> ChooseGroups(IReadOnlyList<ReleaseGroupHit> groups, string album)
+        /// <summary>The album names to try, in order: as written (noise removed), without trailing "(...)", and each with 2 and II swapped.</summary>
+        internal static IReadOnlyList<string> AlbumNameVariants(string album)
+        {
+            var list = new List<string>();
+            void Add(string value)
+            {
+                if (!string.IsNullOrWhiteSpace(value) && !list.Contains(value, StringComparer.OrdinalIgnoreCase)) list.Add(value);
+            }
+            var clean = AlbumNameCleaner.ForSearch(album);
+            var loose = AlbumNameCleaner.ForSearchLoose(album);
+            Add(clean);
+            Add(loose);
+            Add(TitleNormaliser.SwapNumerals(clean));
+            Add(TitleNormaliser.SwapNumerals(loose));
+            return list;
+        }
+
+        private static IEnumerable<SearchShape> SearchShapes(string artist)
+        {
+            if (!string.IsNullOrWhiteSpace(artist)) yield return SearchShape.QuotedAlbumAndArtist;
+            yield return SearchShape.QuotedAlbumOnly;
+            yield return SearchShape.PlainWords;
+            if (!string.IsNullOrWhiteSpace(artist) && TitleNormaliser.Normalise(artist) != "various artists") yield return SearchShape.ArtistAlbums;
+        }
+
+        private static string Describe(SearchShape shape) =>
+            shape == SearchShape.QuotedAlbumAndArtist ? "exact album and artist"
+            : shape == SearchShape.QuotedAlbumOnly ? "exact album, any artist"
+            : shape == SearchShape.ArtistAlbums ? "all albums by the artist"
+            : "plain words";
+
+        /// <summary>
+        /// Whether the artist on the files and the artist MusicBrainz credits are plausibly the same: similar names, or a shared name part
+        /// ("Alan Menken &amp; Howard Ashman" and "Alan Menken"), or "Various Artists" on either side. Track-by-track checking still decides.
+        /// </summary>
+        internal static bool ArtistsAgree(string fileArtist, string credit)
+        {
+            var a = TitleNormaliser.Normalise(fileArtist);
+            var b = TitleNormaliser.Normalise(credit);
+            if (a.Length == 0 || b.Length == 0) return true;
+            if (a == "various artists" || b == "various artists") return true;
+            if (TitleNormaliser.Similarity(fileArtist, credit) >= 0.5) return true;
+            var skip = new HashSet<string> { "the", "and", "feat", "featuring", "ft", "with", "cast" };
+            var ta = new HashSet<string>(a.Split(' ').Where(w => w.Length > 0 && !skip.Contains(w)));
+            var tb = new HashSet<string>(b.Split(' ').Where(w => w.Length > 0 && !skip.Contains(w)));
+            if (ta.Count == 0 || tb.Count == 0) return true;
+            int shared = ta.Count(w => tb.Contains(w));
+            return shared > 0 && shared >= 0.5 * Math.Min(ta.Count, tb.Count);
+        }
+
+        /// <summary>The same artist under (nearly) the same name, not just a shared word. "Various Artists" never counts.</summary>
+        internal static bool ArtistsStronglyAgree(string fileArtist, string credit)
+        {
+            if (string.IsNullOrWhiteSpace(fileArtist) || string.IsNullOrWhiteSpace(credit)) return false;
+            if (TitleNormaliser.Normalise(fileArtist) == "various artists" || TitleNormaliser.Normalise(credit) == "various artists") return false;
+            return TitleNormaliser.Similarity(fileArtist, credit) >= 0.9;
+        }
+
+        private IEnumerable<ReleaseGroupHit> ChooseGroups(IReadOnlyList<ReleaseGroupHit> groups, string album, string artist, bool requireArtist)
         {
             return groups
-                .Where(g => g.Score >= 80 && TitleNormaliser.Similarity(g.Title, album) >= 0.85)
+                .Where(g => (g.Score >= 80 || !requireArtist) && TitleNormaliser.AlbumSimilarity(g.Title, album) >= 0.85 && (!requireArtist || ArtistsAgree(artist, g.ArtistCredit)))
                 .OrderBy(g => g.SecondaryTypes.Count)
                 .ThenByDescending(g => g.Score)
                 .Take(_settings.MaxReleaseGroups);

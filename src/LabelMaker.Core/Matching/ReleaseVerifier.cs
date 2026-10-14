@@ -147,7 +147,7 @@ namespace LabelMaker.Core.Matching
             var album = MostCommon(files.Select(f => f.Tags.Album));
             if (album.Length > 0)
             {
-                total += AlbumShare * TitleNormaliser.Similarity(album, release.Title);
+                total += AlbumShare * TitleNormaliser.AlbumSimilarity(album, release.Title);
                 weight += AlbumShare;
             }
 

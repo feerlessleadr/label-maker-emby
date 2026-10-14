@@ -16,6 +16,11 @@ namespace LabelMaker.Tests
     {
         public ReleaseInfo? Lookup { get; set; }
         public IReadOnlyList<ReleaseGroupHit> Groups { get; set; } = Array.Empty<ReleaseGroupHit>();
+
+        /// <summary>Answers for one search shape; any shape not listed here gets <see cref="Groups"/>.</summary>
+        public Dictionary<SearchShape, IReadOnlyList<ReleaseGroupHit>> GroupsByShape { get; } = new Dictionary<SearchShape, IReadOnlyList<ReleaseGroupHit>>();
+
+        public List<string> SearchLog { get; } = new List<string>();
         public IReadOnlyList<ReleaseInfo> Browse { get; set; } = Array.Empty<ReleaseInfo>();
         public int LookupCalls { get; private set; }
         public int SearchCalls { get; private set; }
@@ -27,10 +32,11 @@ namespace LabelMaker.Tests
             return Task.FromResult(Lookup);
         }
 
-        public Task<IReadOnlyList<ReleaseGroupHit>> SearchReleaseGroupsAsync(string artist, string album, int limit = 5, CancellationToken cancellation = default)
+        public Task<IReadOnlyList<ReleaseGroupHit>> SearchReleaseGroupsAsync(string artist, string album, int limit, SearchShape shape, CancellationToken cancellation = default)
         {
             SearchCalls++;
-            return Task.FromResult(Groups);
+            SearchLog.Add($"{shape}|{album}|{artist}|{limit}");
+            return Task.FromResult(GroupsByShape.TryGetValue(shape, out var found) ? found : Groups);
         }
 
         public Task<IReadOnlyList<ReleaseInfo>> BrowseOfficialReleasesAsync(string releaseGroupId, CancellationToken cancellation = default)
@@ -128,7 +134,7 @@ namespace LabelMaker.Tests
             var result = await new AlbumMatcher(mb).MatchAsync(files, InsomniacInfo());
 
             Assert.NotEqual(MatchOutcome.Auto, result.Outcome);
-            Assert.Equal(1, mb.SearchCalls);
+            Assert.True(mb.SearchCalls >= 1, "the search should have run after the hint failed");
         }
 
         [Fact]

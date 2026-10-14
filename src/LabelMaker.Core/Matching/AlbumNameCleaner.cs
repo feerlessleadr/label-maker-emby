@@ -14,8 +14,28 @@ namespace LabelMaker.Core.Matching
         private static readonly Regex Site = new Regex(@"\s*\(?\b(?:www\.)?[a-z0-9-]+\.(?:com|net|org|ru|io)\b\)?", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
         private static readonly Regex NoisyParentheses = new Regex(
-            @"\s*\((?=[^)]*\b(?:flac|mp3|\d+\s*kbps|kbps|web|cdrip|cd|vinyl|24[- ]?bit|hi-?res|remaster(?:ed)?|deluxe|expanded|bonus|edition|anniversary|explicit|clean|reissue|digital|version)\b)[^)]*\)\s*$",
+            @"\s*\((?=[^)]*\b(?:flac|mp3|\d+\s*kbps|kbps|web|cdrip|cd|vinyl|24[- ]?bit|hi-?res|remaster(?:ed)?|deluxe|expanded|bonus|edition|anniversary|explicit|clean|n?sfw|reissue|digital|version)\b)[^)]*\)\s*$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+        private static readonly Regex AnyTrailingGroup = new Regex(@"\s*[\(\[][^\)\]]*[\)\]]\s*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+        /// <summary>
+        /// A looser version for a second try: every trailing "(...)" or "[...]" group is dropped, whatever it says ("Take Off Your Pants and
+        /// Jacket (Green)" becomes "Take Off Your Pants and Jacket"). Returns the original when nothing would be left.
+        /// </summary>
+        public static string ForSearchLoose(string album)
+        {
+            var text = ForSearch(album);
+            string previous;
+            do
+            {
+                previous = text;
+                text = AnyTrailingGroup.Replace(text, string.Empty);
+            }
+            while (text != previous);
+            text = text.Trim();
+            return text.Length == 0 ? ForSearch(album) : text;
+        }
 
         /// <summary>The album name for searching. Returns the original text when cleaning would leave nothing.</summary>
         public static string ForSearch(string album)

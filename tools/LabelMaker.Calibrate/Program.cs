@@ -47,6 +47,7 @@ namespace LabelMaker.Calibrate
             public string TruthStatus = string.Empty;
             public string Error = string.Empty;
             public bool SameAlbum;
+            public string Notes = string.Empty;
             public double TruthScore;
             public int TruthWeak;
             public bool TruthInCandidates;
@@ -112,6 +113,7 @@ namespace LabelMaker.Calibrate
                         row.BestId = result.Best?.Release.Id ?? string.Empty;
                         row.BestTitle = result.Best?.Release.Title ?? string.Empty;
                         row.Interchangeable = result.InterchangeableEditions;
+                        row.Notes = string.Join(" / ", result.Notes);
 
                         if (!truthCache.TryGetValue(album.TruthId, out var truth)) { truth = await mb.LookupReleaseAsync(album.TruthId); truthCache[album.TruthId] = truth; }
                         row.TruthTitle = truth?.Title ?? "(release not found)";
@@ -280,6 +282,8 @@ namespace LabelMaker.Calibrate
             foreach (var r in rows.Where(r => r.Scenario == "tags as they are" && r.Outcome == "NoMatch").Take(60))
             {
                 sb.AppendLine($"- \"{r.Artist} - {r.AlbumName}\" ({r.Files} file(s), library release {r.TruthStatus}): {r.Reason}");
+                sb.AppendLine($"    - what happened: {r.Notes}");
+                sb.AppendLine($"    - the library says this album is \"{r.TruthTitle}\"");
             }
             sb.AppendLine();
 

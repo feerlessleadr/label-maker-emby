@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
@@ -24,7 +25,42 @@ namespace LabelMaker.Core.Matching
                 if (ch == '&') { sb.Append(" and "); continue; }
                 sb.Append(char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : ' ');
             }
-            return CollapseSpaces(sb.ToString());
+            return MapNumerals(CollapseSpaces(sb.ToString()));
+        }
+
+        private static readonly Dictionary<string, string> RomanToDigit = new Dictionary<string, string>
+        {
+            // "i", "v" and "x" are left out: they are as likely to be a word or a letter as a number.
+            ["ii"] = "2", ["iii"] = "3", ["iv"] = "4", ["vi"] = "6", ["vii"] = "7", ["viii"] = "8", ["ix"] = "9",
+        };
+
+        /// <summary>Whole-word Roman numerals II to IX become digits, so "Frozen II" and "Frozen 2" compare as the same.</summary>
+        private static string MapNumerals(string normalised)
+        {
+            var parts = normalised.Split(' ');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (RomanToDigit.TryGetValue(parts[i], out var digit)) parts[i] = digit;
+            }
+            return string.Join(" ", parts);
+        }
+
+        /// <summary>
+        /// The same text with each whole-word digit 2 to 9 written as a Roman numeral and each Roman numeral II to IX written as a digit.
+        /// Used to try the other spelling of a title in a search. Returns the text unchanged when it has neither.
+        /// </summary>
+        public static string SwapNumerals(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return text ?? string.Empty;
+            var toRoman = new Dictionary<string, string> { ["2"] = "II", ["3"] = "III", ["4"] = "IV", ["5"] = "V", ["6"] = "VI", ["7"] = "VII", ["8"] = "VIII", ["9"] = "IX" };
+            var parts = text.Split(' ');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                var bare = parts[i].Trim('(', ')', ',', '.', ':');
+                if (toRoman.TryGetValue(bare, out var roman)) parts[i] = parts[i].Replace(bare, roman);
+                else if (RomanToDigit.TryGetValue(bare.ToLowerInvariant(), out var digit)) parts[i] = parts[i].Replace(bare, digit);
+            }
+            return string.Join(" ", parts);
         }
 
         /// <summary>The title without a trailing "(...)", "[...]" or " - ..." part, as a comparison key.</summary>
@@ -49,6 +85,25 @@ namespace LabelMaker.Core.Matching
             return Normalise(trimmed);
         }
 
+        /// <summary>
+        /// Like <see cref="Similarity"/> for album names, but an album name that is the other one plus a subtitle counts as 0.9
+        /// ("The Little Mermaid" and "The Little Mermaid: Original Motion Picture Soundtrack"). The shorter name must be at least two words or
+        /// ten letters, so a one-word name such as "Home" is not taken for a prefix of every longer title.
+        /// </summary>
+        public static double AlbumSimilarity(string a, string b)
+        {
+            double plain = Similarity(a, b);
+            if (plain >= 0.9) return plain;
+            var na = Normalise(a);
+            var nb = Normalise(b);
+            if (na.Length == 0 || nb.Length == 0) return plain;
+            var shorter = na.Length <= nb.Length ? na : nb;
+            var longer = na.Length <= nb.Length ? nb : na;
+            bool prefix = longer.StartsWith(shorter + " ", StringComparison.Ordinal);
+            bool enough = shorter.Split(' ').Length >= 2 || shorter.Length >= 10;
+            return prefix && enough ? Math.Max(plain, 0.9) : plain;
+        }
+
         /// <summary>0 to 1. 1 means the same title once normalised; 0.9 or less when only a trailing remark differs.</summary>
         public static double Similarity(string a, string b)
         {
@@ -56,6 +111,7 @@ namespace LabelMaker.Core.Matching
             var nb = Normalise(b);
             if (na.Length == 0 || nb.Length == 0) return 0;
             if (na == nb) return 1;
+            if (na.Replace(" ", string.Empty) == nb.Replace(" ", string.Empty)) return 0.95; // "G I R L" and "Girl"
 
             double full = Ratio(na, nb);
             var ca = Core(a);

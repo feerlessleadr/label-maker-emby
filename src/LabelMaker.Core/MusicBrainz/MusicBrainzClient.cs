@@ -67,12 +67,34 @@ namespace LabelMaker.Core.MusicBrainz
         public int Score { get; set; }
     }
 
+    /// <summary>
+    /// How an album is searched. The exact "album AND artist" query is the most precise but often finds nothing (artist names
+    /// are stored in many spellings), so the matcher falls back to the looser shapes and checks the artist itself.
+    /// </summary>
+    public enum SearchShape
+    {
+        /// <summary>The album name as an exact phrase and the artist name as an exact phrase.</summary>
+        QuotedAlbumAndArtist,
+
+        /// <summary>Only the album name, as an exact phrase. The caller filters the answers by artist.</summary>
+        QuotedAlbumOnly,
+
+        /// <summary>The album and artist words with all punctuation removed, matched loosely.</summary>
+        PlainWords,
+
+        /// <summary>
+        /// Every album by the artist (the album name is not searched). The last resort for titles no text search can reach, such as
+        /// "G I R L" for "Girl"; the caller picks the album whose name is closest.
+        /// </summary>
+        ArtistAlbums,
+    }
+
     /// <summary>What the matcher needs from MusicBrainz. The tests use a fake; the plugin uses <see cref="MusicBrainzClient"/>.</summary>
     public interface IMusicBrainz
     {
         Task<ReleaseInfo?> LookupReleaseAsync(string releaseId, CancellationToken cancellation = default);
 
-        Task<IReadOnlyList<ReleaseGroupHit>> SearchReleaseGroupsAsync(string artist, string album, int limit = 5, CancellationToken cancellation = default);
+        Task<IReadOnlyList<ReleaseGroupHit>> SearchReleaseGroupsAsync(string artist, string album, int limit, SearchShape shape, CancellationToken cancellation = default);
 
         /// <summary>The official releases of one release group, with their track lists.</summary>
         Task<IReadOnlyList<ReleaseInfo>> BrowseOfficialReleasesAsync(string releaseGroupId, CancellationToken cancellation = default);
@@ -131,11 +153,30 @@ namespace LabelMaker.Core.MusicBrainz
             return body == null ? null : ParseRelease(body);
         }
 
-        public async Task<IReadOnlyList<ReleaseGroupHit>> SearchReleaseGroupsAsync(string artist, string album, int limit = 5, CancellationToken cancellation = default)
+        public async Task<IReadOnlyList<ReleaseGroupHit>> SearchReleaseGroupsAsync(string artist, string album, int limit, SearchShape shape, CancellationToken cancellation = default)
         {
-            if (string.IsNullOrWhiteSpace(album)) return Array.Empty<ReleaseGroupHit>();
-            var query = "releasegroup:\"" + LuceneEscape(album) + "\"";
-            if (!string.IsNullOrWhiteSpace(artist)) query += " AND artist:\"" + LuceneEscape(artist) + "\"";
+            var cleanAlbum = CleanForQuery(album);
+            var cleanArtist = CleanForQuery(artist);
+            if (cleanAlbum.Length == 0 && shape != SearchShape.ArtistAlbums) return Array.Empty<ReleaseGroupHit>();
+
+            string query;
+            switch (shape)
+            {
+                case SearchShape.QuotedAlbumOnly:
+                    query = "releasegroup:\"" + LuceneEscape(cleanAlbum) + "\"";
+                    break;
+                case SearchShape.PlainWords:
+                    query = (Words(cleanAlbum) + " " + Words(cleanArtist)).Trim();
+                    break;
+                case SearchShape.ArtistAlbums:
+                    if (cleanArtist.Length == 0) return Array.Empty<ReleaseGroupHit>();
+                    query = "artist:\"" + LuceneEscape(cleanArtist) + "\" AND primarytype:album";
+                    break;
+                default:
+                    query = "releasegroup:\"" + LuceneEscape(cleanAlbum) + "\"";
+                    if (cleanArtist.Length > 0) query += " AND artist:\"" + LuceneEscape(cleanArtist) + "\"";
+                    break;
+            }
             var url = $"{_baseUrl}/release-group?query={Uri.EscapeDataString(query)}&fmt=json&limit={Math.Max(1, Math.Min(limit, 25))}";
             var body = await GetWithRetriesAsync(url, cancellation).ConfigureAwait(false);
             return body == null ? Array.Empty<ReleaseGroupHit>() : ParseReleaseGroupSearch(body);
@@ -242,6 +283,33 @@ namespace LabelMaker.Core.MusicBrainz
                 }
             }
             return release;
+        }
+
+        /// <summary>
+        /// Text as MusicBrainz's search expects it: every kind of dash becomes a plain hyphen and curly quotes become plain ones (a
+        /// Unicode hyphen in "blink-182" made the search find nothing), control characters are dropped, spaces are collapsed.
+        /// </summary>
+        internal static string CleanForQuery(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            var sb = new StringBuilder(text!.Length);
+            foreach (var ch in text.Normalize(NormalizationForm.FormKC))
+            {
+                if (char.IsControl(ch)) continue;
+                if (ch == '\u2212' || char.GetUnicodeCategory(ch) == System.Globalization.UnicodeCategory.DashPunctuation) sb.Append('-');
+                else if (ch == '\u2018' || ch == '\u2019' || ch == '\u201B' || ch == '\u2032') sb.Append('\'');
+                else if (ch == '\u201C' || ch == '\u201D' || ch == '\u201F') sb.Append('"');
+                else sb.Append(ch);
+            }
+            return string.Join(" ", sb.ToString().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        /// <summary>The letters and digits of a text with everything else turned into single spaces.</summary>
+        internal static string Words(string text)
+        {
+            var sb = new StringBuilder(text.Length);
+            foreach (var ch in text) sb.Append(char.IsLetterOrDigit(ch) ? ch : ' ');
+            return string.Join(" ", sb.ToString().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
         }
 
         /// <summary>Escapes the characters that mean something inside a quoted Lucene phrase (backslash and double quote).</summary>
