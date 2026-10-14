@@ -219,8 +219,15 @@ namespace LabelMaker.Tests
         public async Task EditionsWithDifferentRecordingsGoToReviewUnderTheStrictRule()
         {
             var (original, remaster) = TwoEditions();
-            var result = await new AlbumMatcher(SearchableWith(original, remaster)).MatchAsync(new[] { File_("Brat", 2, 1), File_("86", 7, 1) }, null);
+            var strict = new MatchSettings { EditionRule = EditionRule.SameRecordings };
+            var result = await new AlbumMatcher(SearchableWith(original, remaster), strict).MatchAsync(new[] { File_("Brat", 2, 1), File_("86", 7, 1) }, null);
             Assert.Equal(MatchOutcome.NeedsReview, result.Outcome);
+        }
+
+        [Fact]
+        public void TheTitleRuleIsTheDefault()
+        {
+            Assert.Equal(EditionRule.SameTitles, new MatchSettings().EditionRule);
         }
 
         [Fact]

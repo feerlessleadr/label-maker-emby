@@ -22,34 +22,64 @@ namespace LabelMaker.Core.Matching
 
     public enum EditionRule
     {
-        /// <summary>Strict: editions count as the same only when MusicBrainz lists the same recordings (a remaster is a different recording).</summary>
+        /// <summary>
+        /// Strict. Two editions of an album count as the same only when MusicBrainz lists the very same recording of every one of your
+        /// songs. A remastered edition lists different recordings, so when both a remaster and the original fit your files, the album goes to
+        /// your review list so you choose. Safest, but more albums wait for you.
+        /// </summary>
         SameRecordings,
 
-        /// <summary>Editions with the same track titles at the same positions count as the same, and the preferred one is picked.</summary>
+        /// <summary>
+        /// Same titles (the default). Editions of an album count as the same when they list the same song titles in the same places for the
+        /// files you have. Label Maker then picks one for you (your preferred countries first, then the earliest release date). Your files, folders
+        /// and visible tags come out the same whichever it picks; the only difference is the hidden MusicBrainz ids, which may belong to a
+        /// different edition of the same album (for example the remaster). Editions that list different titles or a different order are never
+        /// treated as the same.
+        /// </summary>
         SameTitles,
     }
 
     public sealed class MatchSettings
     {
-        /// <summary>The best edition must score at least this much to be applied without asking.</summary>
+        /// <summary>
+        /// How sure Label Maker must be before it tags and moves an album without asking you. The score runs from 0 (nothing fits) to 1 (every
+        /// title, number and name fits exactly). Default 0.92: very close to certain. Raise it to send more albums to review; lowering it
+        /// applies more albums on its own and, in testing on a real library, starts letting wrong ones through.
+        /// </summary>
         public double AutoThreshold { get; set; } = 0.92;
 
-        /// <summary>Under this, there is no match at all.</summary>
+        /// <summary>
+        /// Below this score the best candidate is too poor to even suggest, and the album is reported as "no match" and left in the inbox.
+        /// Between this and the automatic threshold the album goes to your review list with its best candidates. Default 0.60.
+        /// </summary>
         public double ReviewThreshold { get; set; } = 0.60;
 
-        /// <summary>Every file needs a track scoring at least this much.</summary>
+        /// <summary>
+        /// Every file in the album must fit some track of the release at least this well. One file that does not fit (a different song, a
+        /// bonus track the release does not list) sends the whole album to review, so a single wrong file cannot hide in a good average.
+        /// Default 0.5.
+        /// </summary>
         public double MinFileScore { get; set; } = 0.5;
 
-        /// <summary>A different edition (with other tracks) must score at least this much lower than the best, or the album goes to review.</summary>
+        /// <summary>
+        /// When another edition fits your files almost as well as the best one, and it is a genuinely different fit (not just the same
+        /// songs in the same places), the album goes to review instead of guessing. "Almost as well" means within this score. Default 0.05.
+        /// </summary>
         public double Margin { get; set; } = 0.05;
 
-        /// <summary>How many release groups with the album's title are checked (several albums can share a title).</summary>
+        /// <summary>
+        /// Several different albums can share a name (a studio album and a live album, or two artists' "Greatest Hits"). Label Maker checks the
+        /// editions of up to this many albums with the right name, so the wrong one is never chosen just because it was found first. Default 3.
+        /// </summary>
         public int MaxReleaseGroups { get; set; } = 3;
 
-        /// <summary>What makes two editions interchangeable for the files: the same recordings in the same places, or just the same track titles in the same places.</summary>
-        public EditionRule EditionRule { get; set; } = EditionRule.SameRecordings;
+        /// <summary>How Label Maker decides that two editions of an album are interchangeable for your files. See <see cref="EditionRule"/>.</summary>
+        public EditionRule EditionRule { get; set; } = EditionRule.SameTitles;
 
-        /// <summary>Country codes in order of preference for choosing between identical editions ("XW" is worldwide).</summary>
+        /// <summary>
+        /// When several editions are interchangeable, the one released in the first of these countries wins ("XW" means worldwide). If none match,
+        /// the earliest release date wins. Default: United States, worldwide, then Great Britain.
+        /// </summary>
         public IList<string> PreferredCountries { get; } = new List<string> { "US", "XW", "GB" };
     }
 

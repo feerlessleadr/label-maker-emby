@@ -40,6 +40,9 @@ Write-Host ("Found {0} audio files in {1} folders." -f $files.Count, $byFolder.C
 # A repeatable random sample: the same -Seed gives the same albums.
 $sample = $byFolder | Get-Random -Count ([Math]::Min($MaxAlbums, $byFolder.Count)) -SetSeed $Seed
 
+# ID3v2.3 separates several artists with '/', so TagLib splits 'AC/DC' into 'AC' and 'DC': put the name back together for those files.
+function NameOf($names, $slashSplit) { $a = @($names); if ($a.Count -eq 0) { '' } elseif ($slashSplit) { $a -join '/' } else { [string]$a[0] } }
+
 function Number($value) { if ($value -and [int]$value -gt 0) { [int]$value } else { $null } }
 
 $albums = New-Object System.Collections.Generic.List[object]
@@ -53,11 +56,13 @@ foreach ($group in $sample) {
             $tl = [TagLib.File]::Create($file.FullName)
             try {
                 $t = $tl.Tag
+                $id3 = $tl.GetTag([TagLib.TagTypes]::Id3v2, $false)
+                $slashSplit = ($null -ne $id3) -and ($id3.Version -lt 4)
                 $tracks.Add([ordered]@{
                     file         = $file.Name
                     title        = [string]$t.Title
-                    artist       = [string](@($t.Performers)[0])
-                    albumArtist  = [string](@($t.AlbumArtists)[0])
+                    artist       = NameOf $t.Performers $slashSplit
+                    albumArtist  = NameOf $t.AlbumArtists $slashSplit
                     album        = [string]$t.Album
                     track        = Number $t.Track
                     trackCount   = Number $t.TrackCount

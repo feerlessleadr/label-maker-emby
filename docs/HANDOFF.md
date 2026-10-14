@@ -120,3 +120,26 @@ Everything on the owner's real Windows server (share permissions for the account
 - **Not matched at all (14 of 287):** soundtracks and Various Artists albums, names with a Unicode hyphen (U+2010) or "(sfw)" suffixes, a few others. Next fixes: normalise dashes in the search, loosen the search when the quoted one finds nothing, a recording-search fallback.
 - **Decision for the owner:** edition rule. Recommendation: `SameTitles` by default (72% to 83% automatic, no wrong album); the cost is that the recording ids written may come from another edition of the same album.
 - **Not measured yet:** the 32 albums with no id (mostly the kids library), the real MusicGrabber path (`.albuminfo`), and albums with mixed ids.
+
+## 14. Plan: "not matched at all" and "not measured yet" (2026-10-14)
+Rules are explained in plain English in `docs/MATCHING-RULES.md` (the settings page should reuse that wording). The edition rule now defaults to **same titles** (owner decision).
+
+**Found by calibration, fixed:** ID3v2.3 files store several artists separated by "/", so TagLib read the band "AC/DC" as "AC" and "DC" and the reader (and the exporter script) took "AC". The reader now puts the name back together for ID3v2.3 files (ID3v2.4, which Label Maker writes, was never affected). Two tests cover it.
+
+### Build plan, in order
+1. **Diagnose each of the 14 unmatched albums** (add to the harness: the query sent, how many groups came back, the top group, why it was filtered). Several causes are only guessed so far.
+2. **Cheap search fixes:** treat all dash and quote variants as plain ones (a Unicode hyphen broke "blink-182"); strip "(sfw)", "(nsfw)", "(explicit)", "(clean)"; if the exact quoted search finds nothing, retry without the quotes, then without the artist, then as a release search; for an artist name with "/" in it, also try the part before the slash; for soundtracks and "Various Artists", search without the artist.
+3. **Recording fallback:** when the album search still finds nothing, search recordings by title and artist for up to three files, collect the releases that contain them, and check them with the same scoring and the same rules. A result found this way is never applied automatically unless every checked file points to the same release and the score is 0.92 or more; otherwise it goes to review.
+4. **Use ids already in the tags as a hint:** a Picard-tagged file carries its release id. Look it up and verify it like MusicGrabber's `.albuminfo`; if the files in one folder carry different release ids, send the folder to review with the reason "These files carry different release ids". (This also covers the 3 mixed-id albums in the test.)
+5. **Re-run the calibration** and compare. Targets: unmatched under 2% of the answer-key albums, precision unchanged at 100% for trustworthy albums.
+
+### Plan for what was not measured
+- **32 albums with no id (mostly the kids library):** after steps 1 to 4, run the matcher on them and give the owner a short yes/no list ("Label Maker says this album is X: right or wrong?"). Those answers become an answer key for the kids lane, which is the lane most likely to hold untagged music.
+- **MusicGrabber's `.albuminfo` path:** add two scenarios to the harness, "hint with the right release id" (expect automatic where the files fit, one lookup) and "hint with a wrong id" (another edition, another album: expect it to be ignored and the search to run, never a wrong automatic apply). Then measure the real thing in the dry-run trial on the real inbox (how many folders have the file, how often it checks out).
+- **Albums with mixed ids:** step 4 above; in production MusicGrabber does not write ids, so these should be rare.
+
+### What happens in production when an album is not matched
+- **No match:** the album stays in the inbox untouched (owner decision) and is listed under "Needs review, No match" with the plain reason; the phone gets the count. The owner can search by hand, paste a MusicBrainz link, choose "keep my tags and file it", skip, or send it to the trash folder. "Keep my tags" is refused unless artist, album and title are all present, so it cannot create an "Unknown Artist" folder.
+- **MusicBrainz down or busy:** the album waits and is retried; it is never counted as "no match".
+- **A better matcher later:** items still in review are re-checked when the matching version improves; finished albums are never touched.
+- **Situations not yet measured:** they default to review, not automatic; automatic applying is switched on one lane at a time after a dry-run trial on that lane's real data (MATCHING-RULES.md section 7b).

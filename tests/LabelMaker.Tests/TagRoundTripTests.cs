@@ -146,5 +146,23 @@ namespace LabelMaker.Tests
             var path = _files.Copy("silence.mp3", "bad.mp3");
             Assert.Throws<ArgumentOutOfRangeException>(() => TrackTagFile.Write(path, Sample(), new TagWriteOptions { Id3Version = 2 }));
         }
+
+        [Theory]
+        [InlineData(3)]
+        [InlineData(4)]
+        public void AnArtistNameWithASlashIsReadBackAsOneName(int id3Version)
+        {
+            // ID3v2.3 separates artists with "/", so TagLib splits "AC/DC" into "AC" and "DC"; the reader puts the name back together.
+            var path = _files.Copy("silence.mp3", "acdc" + id3Version + ".mp3");
+            var tags = Sample();
+            tags.Artist = "AC/DC";
+            tags.AlbumArtist = "AC/DC";
+            TrackTagFile.Write(path, tags, new TagWriteOptions { Id3Version = (byte)id3Version });
+
+            var read = TrackTagFile.Read(path);
+
+            Assert.Equal("AC/DC", read.Artist);
+            Assert.Equal("AC/DC", read.AlbumArtist);
+        }
     }
 }

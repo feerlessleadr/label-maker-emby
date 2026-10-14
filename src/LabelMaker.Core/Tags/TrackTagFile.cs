@@ -25,11 +25,18 @@ namespace LabelMaker.Core.Tags
         {
             using var file = TagFile.Create(path);
             var tag = file.Tag;
+
+            // ID3v2.3 separates several artists with "/", so TagLib splits the single name "AC/DC" into "AC" and "DC".
+            // Putting the pieces back with "/" restores the name as written; ID3v2.4 and the other formats keep the first value.
+            var id3 = file.GetTag(TagLib.TagTypes.Id3v2, false) as TagLib.Id3v2.Tag;
+            bool slashSplit = id3 != null && id3.Version < 4;
+            string Name(string[] names) => names.Length == 0 ? string.Empty : slashSplit ? string.Join("/", names) : names[0];
+
             return new TrackTags
             {
                 Title = tag.Title ?? string.Empty,
-                Artist = tag.Performers.FirstOrDefault() ?? string.Empty,
-                AlbumArtist = tag.AlbumArtists.FirstOrDefault() ?? string.Empty,
+                Artist = Name(tag.Performers),
+                AlbumArtist = Name(tag.AlbumArtists),
                 Album = tag.Album ?? string.Empty,
                 TrackNumber = Positive(tag.Track),
                 TotalTracks = Positive(tag.TrackCount),
