@@ -1,0 +1,25 @@
+name: CI
+
+# Builds the engine and runs the unit tests on every push to main and on every pull request.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore and build the engine
+        run: |
+          dotnet restore src/LabelMaker.Core --locked-mode
+          dotnet build src/LabelMaker.Core -c Release --no-restore
+
+      - name: Run the unit tests
+        run: dotnet test tests/LabelMaker.Tests

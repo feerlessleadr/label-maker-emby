@@ -1,0 +1,53 @@
+# Label Maker: Phase 0 results (2026-10-13)
+
+Spikes were run in throw-away projects (not in this repo) against the local test Emby server (4.10.1.0; plugins compile for net6.0 but run on .NET 8.0.31) and the live MusicBrainz API. Each result says what changes in `DESIGN.md`.
+
+## 1. Tag writing: TagLibSharp 2.3.0 works, with one loading trick
+- Round trip OK for **MP3, FLAC, M4A, Opus and Ogg Vorbis**: title, album, artists, album artist, track and disc numbers and totals, year, MusicBrainz IDs (Picard-compatible keys: `MUSICBRAINZ_ALBUMID` etc. in Vorbis; `TXXX:MusicBrainz Album Id` in ID3 and MP4; recording ID in an ID3 `UFID` owned by `http://musicbrainz.org`), front cover art. Lyrics and comment stay when only other tags change.
+- ID3 frames we do not own survive a re-tag: `POPM` (rating and play count) and custom `TXXX` (ReplayGain) were preserved.
+- **ID3v2.3 works** with `Tag.DefaultVersion = 3; ForceDefaultVersion = true`.
+- **ID3v1 is added on every MP3 save**, even when only v2 is touched. Call `RemoveTags(TagTypes.Id3v1 | TagTypes.Ape)` before `Save()`; verified the 128-byte footer is then gone. (`TagTypes` still reports `Id3v1` on re-read: TagLib creates an empty object; nothing is on disk.)
+- A read-only file throws `UnauthorizedAccessException`; the applier must turn it into a per-album failure with a plain message.
+- **Emby does not ship TagLibSharp** (no conflicting copy in `system\`).
+- **A separate `TagLibSharp.dll` next to the plugin does NOT work.** Emby loads every DLL in `plugins\` itself, but the plugin then fails with `FileNotFoundException: TagLibSharp`, and `Assembly.Location` is empty for plugins, so path-based resolving fails too. **Working solution (tested live):** embed the unmodified `TagLibSharp.dll` as an embedded resource of the plugin and register `AssemblyLoadContext.Default.Resolving` in the plugin's static constructor to `LoadFromStream` it. One DLL to ship (about +0.5 MB). TagLibSharp is LGPL-2.1: it stays unmodified and separate inside the file; the README must say so and link the source.
+
+## 2. Emby APIs (package 4.9.1.90, tested on 4.10.1.0)
+- **`ILibraryMonitor`** injects into the plugin constructor. `ReportFileSystemChangeBeginning(path)` then `ReportFileSystemChangeComplete(path, true)` works: a new album folder in the library showed up in Emby (artist, album, track) about **90 to 120 seconds** after the call (Emby's monitor delay). The UI must not promise instant visibility. Removal of a deleted folder did not happen within 140 s through the monitor; a full library refresh removed the track and album (an orphan artist entry stayed). Irrelevant for Label Maker, which only adds files.
+- **`ILibraryManager.GetVirtualFolders()`** returns each library with its `Locations` (`Music [music] -> C:\claude\Music` on the test server): usable for the preflight checks "library folder is inside an Emby music library" and "inbox is not inside a library".
+- **`ISessionManager.SendMessageToAdminSessions(name, data, ct)`** delivered a message to a websocket authenticated as a throw-away administrator: `{"MessageType":"LabelMakerProbe.Test","Data":{"Count":3}}`. A socket opened with only an API key received nothing: pushes reach **administrator user sessions only** (the same limit Hall Monitor has). The app's `AlertService` connects as the signed-in administrator, so it will receive Label Maker pushes.
+- **`INotificationManager.SendNotification(...)`** exists (Emby's own notification system): an optional extra, not needed for the app.
+- `IServerEntryPoint` / `BasePlugin<T>` shell is the same as Hall Pass.
+- Emby itself asks its own MusicBrainz mirror (`musicbrainz.emby.tv`) when it scans; Label Maker uses the public `musicbrainz.org` API (or a configured mirror) with its own User-Agent.
+
+## 3. MusicBrainz probe on the owner's test library (92 tracks, 1 to 6 files per album, `C:\claude\Music`)
+Findings that **change the design**:
+1. **Partial albums are normal.** The sample folders hold 1 to 6 files of albums with 9 to 30 tracks, and MusicGrabber downloads track by track. "Track count equals file count" and "every track on the release is present" cannot be requirements. **New rule: every file must map to a distinct track of the chosen release (a subset is fine); missing tracks are normal.** The track-count part of the score applies only when a folder looks complete.
+2. **Album-text search returns many editions that all score 100** (25 candidates for "Get a Grip" with different track counts, countries, years). The search score cannot pick an edition.
+3. **Recording-centric search (one query per file) is unreliable as the primary method**: for "Get a Grip" and "Permanent Vacation" it surfaced bootleg releases, and for "Tangled" and "Hercules" nothing usable. Fallback only.
+4. **What works (tested):** step 1, `release-group` search (`releasegroup:"X" AND artist:"Y"`), take the top few groups; step 2, **browse that group's official releases with recordings** (`release?release-group=ID&status=official&inc=recordings+artist-credits+labels&limit=100`): 2 calls per album, 30 to 300 KB. Counting how many files' titles occur in each release's track list picked the right group every time and showed which editions contain all the files. For "Hercules" three release groups share the title; only the track-title check reveals the right one, so verify several groups.
+5. **Filters needed from day one:** `status=official` only (bootleg, promotion and withdrawn releases appeared at the top otherwise); prefer primary type Album/EP/Single over Compilation/Live/Bootleg secondary types unless the tags say so.
+6. **Edition choice** among releases that contain all files: track-number agreement (tag `track` against position), preferred country, earliest date. Editions with identical recordings in identical positions are interchangeable (auto-apply, record the tie); editions that differ in track titles or order for the files in question go to review.
+7. **The rate limit is real:** a 503 came even at about 1.5 s spacing right after an earlier burst. The client needs one global queue, `Retry-After`, exponential back-off and a persistent response cache. About 2 to 4 calls per album means roughly 5 to 10 seconds per album at a polite pace.
+8. Normalise typographic apostrophes (`Don’t`) and `&`/`and` before comparing titles.
+
+## 4. MusicGrabber (README, and a real sample the owner supplied in `C:\claude\musicgrabber-sample\`)
+README facts: writes `Albums/Artist/Album[ (Year)]/NN - Title.ext`, `Singles/Artist/Title.ext`, `.lrc`, `cover.jpg`, `.albuminfo`, M3U playlists, `.trash/`; tags with AcoustID and MusicBrainz; settings for ReplayGain and conversion; Docker, Python.
+
+**The real sample** (two folders, 22 audio files; inspected with ffprobe, lyrics text not read):
+- `Green Day\Insomniac\` holds two discs of one release in one folder, file names `01-01 - Armatage Shanks.flac`, `01-02 - Brat.m4a`, `01-07 - 86.mp3`, `02-01 - ...`. **Formats are mixed inside one album** (FLAC from source `monochrome`, M4A from `jiosaavn`, MP3 from another site) because each track is fetched separately. Only some track numbers are present (a partial album again). Titles repeat across the two discs (Armatage Shanks is 01-01 and 02-01).
+- Next to each audio file: a `.lrc` with the same base name (synced lyrics: `[00:04.28] ...`), plus `cover.jpg` and `folder.jpg` in the album folder, plus a hidden **`.albuminfo`** file.
+- **`.albuminfo` is JSON:** `{"artist": "Green Day", "album": "Insomniac", "release_mbid": "46b2741f-10f2-4c3e-9f3d-2c55abfa6f51", "year": "2021"}`. So MusicGrabber already chose a specific MusicBrainz release (a 2021 pressing, note the year differs from the original 1995). **This is the strongest hint available: look the release up directly by `release_mbid` (1 call), verify the files against its track list, and treat a verified match as high confidence.** Without a usable id, fall back to the search flow in section 3.
+- `Leonard Cohen\Various Positions\Hallelujah.flac` (+ `.lrc`): a single track in an album folder, 24-bit FLAC (52 MB), no `.albuminfo`, no number prefix in the file name, but track 5 of 9 in its tags.
+- **Tags MusicGrabber writes** (all three containers): artist, title, album, album artist (FLAC has both `album_artist` and `ALBUM ARTIST`), date (the pressing's year, not the original year), track and total (`track=1`, `TRACKTOTAL=14` and `TOTALTRACKS=14`), disc and `DISCTOTAL`, ISRC and copyright (FLAC), ReplayGain track and album gain/peak (FLAC), **no MusicBrainz IDs**, embedded cover art, and its own custom tags `SOURCE`, `SOURCE_CODEC`, `SOURCE_QUALITY`, `SOURCE_BITRATE`, `MUSICGRABBER_FILE_ID` (FLAC and MP3) or `FILE_ID` (M4A). **Label Maker must preserve these custom tags** (MusicGrabber's own index may use them) and must not strip ReplayGain or ISRC.
+- Consequences for Label Maker: (a) read `.albuminfo` first; (b) sidecars `.lrc` (renamed with their track: `01-01 - X.lrc` becomes `1-01 X.lrc` under the Picard script, which puts the disc number in the file name when the release has more than one disc), `cover.jpg`/`folder.jpg` (keep one, usually `cover.jpg`) and `.albuminfo` (drop after success, or move; decide) travel with the album; (c) one album folder can hold several formats, so an album is never "one format"; (d) multi-disc releases arrive flat in one folder, the disc comes from the tags; (e) the `year` MusicGrabber wrote may be a reissue year, so never use the tag year to reject a release; (f) files that exist twice on different discs (same title) need the disc and track tags to map correctly, not the title alone.
+- Open: whether MusicGrabber re-downloads a track whose file left its folder (needs a live test with the owner's three instances); the Singles layout was not in the sample.
+
+## 5. Picard parity
+- Naming script received (`C:\claude\picard-default-naming-script.txt`, Picard's stock script): adopted as the default template.
+- Not yet known: ID3 version (Picard's default is 2.3, UTF-16), whether cover art is embedded or saved as a file, and which additional files move. The owner's `Picard.ini` (`%APPDATA%\MusicBrainz\Picard.ini`) would settle it. Defaults until then: ID3v2.3, embed the front cover, also move `cover.*`, `.lrc`, `.cue`.
+
+## 6. Still open
+- Picard settings (`Picard.ini`); the MusicGrabber sample has arrived (section 4).
+- Threshold calibration with a golden set that includes partial albums (Phase 1).
+- Real server specifics (UNC share, permissions of the account Emby runs as): only the preflight code on the owner's machine can tell; first run in dry run.
+- Cover Art Archive sizes and AcoustID (deferred).

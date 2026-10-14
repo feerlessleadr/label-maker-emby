@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>LabelMaker.Core</AssemblyName>
+    <RootNamespace>LabelMaker.Core</RootNamespace>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>annotations</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
+    <CheckForOverflowUnderflow>True</CheckForOverflowUnderflow>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <!-- No Emby types here: the engine can later be wrapped as a CLI or service without changes. -->
+  <ItemGroup>
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+  </ItemGroup>
+</Project>

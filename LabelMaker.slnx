@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LabelMaker.Core/LabelMaker.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LabelMaker.Tests/LabelMaker.Tests.csproj" />
+  </Folder>
+</Solution>
