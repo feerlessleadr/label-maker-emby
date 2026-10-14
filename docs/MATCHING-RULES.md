@@ -105,7 +105,7 @@ The plain sentences you will see, and what each means:
 | "The best match is only probable." | The best edition scored under the automatic threshold. | Check the suggestion and approve it, pick another, or search by hand. |
 | "Nothing on MusicBrainz fits these files well enough." | The best candidate scored under 0.60. | Search by hand, paste a MusicBrainz link, or keep your tags. |
 | "No release was found for this album." | The search found nothing usable. | Same as above. |
-| "This folder holds 2 different albums by their tags. Label Maker does not split folders yet, so please sort them into one folder each." | The tags name more than one album (for example "Insomniac" and "Dookie"). | Move each album into its own folder; the inbox is checked again. |
+| "This folder holds 2 different albums by their tags. Use \"Split by album\" on the review screen to put each album in its own folder, or sort them yourself." | The tags name more than one album (for example "Insomniac" and "Dookie"). | Choose "Split by album" (below), or move each album into its own folder yourself; the inbox is checked again. |
 | "1 file(s) could not be read (name). Fix or remove them and the album is checked again." | A file is damaged or is not music. | Replace or delete that file. |
 | "These files have no album name to search for." | The tags have no album. | Type the album name in the review screen's search. |
 | "... is already in the library." | A file with the same name is already there. | Keep both (suffix), replace only if you choose, or discard the new one. |
@@ -126,6 +126,7 @@ Every action below is checked first and refused, with a plain sentence, if it wo
 - **Discard.** Moves the album's files into a `_Trash` folder inside the inbox (in a dated folder of its own with a list of where every file came from). **Nothing is ever deleted by Label Maker.** Label Maker ignores folders that start with an underscore, so a discarded album is not picked up again. Emptied inbox folders are tidied away.
 - **Restore.** Moves a discarded album back to exactly where it was, then waits for your decision. If a file with the same name has since appeared in that place, nothing is restored and you are told why.
 - **Undo.** For an album that was filed: puts every file back in the inbox with its old tags and names (and the cover and lyric files that moved with it), and leaves the album waiting for your decision.
+- **Split by album.** For a folder whose tags name several albums (the sentence above). Label Maker puts each album in a folder of its own inside the mixed folder, named after the album, and each music file takes its lyrics file with it. Nothing is renamed or retagged, "CD1"/"CD2" folders inside are kept, and a cover or other loose file stays where it was. Each new folder is then checked as an album of its own on the next pass. Albums are told apart by the album name in the tags, so if any file has no album name Label Maker refuses and tells you which ones; it never overwrites a folder that is already there (it numbers the new one instead).
 
 ## 7b. Situations Label Maker has not been tested on yet
 Some kinds of albums were not part of the test: files with no MusicBrainz id to check against, MusicGrabber's own "Singles" folders, classical music, several albums mixed in one folder, and files whose tags disagree with each other. The rule for all of them is the same: **until it has been measured on your real downloads, Label Maker asks you instead of acting.** (Update 2026-10-14: MusicGrabber, as the owner runs it, does not use a "Singles" folder for finished downloads; a single track arrives as an album folder with one track, which is tested.)
@@ -179,6 +180,28 @@ Any change starts the 60 seconds again. After a restart of Emby every album also
 **If the inbox cannot be reached** (a network share drops): nothing is marked gone and nothing is lost; the albums are picked up again when it comes back.
 
 **Not built yet.** Splitting a folder that holds several different albums (it goes to review with that reason instead) and spotting classical music, audiobooks and podcasts.
+
+## 8c. Lane rules, the health check and the memory of MusicBrainz answers
+Status: built in the engine (2026-10-14); the settings page that shows them comes with the plugin. (Code: `Inbox/LaneValidator.cs`, `Pipeline/Preflight.cs`, `MusicBrainz/ResponseCache.cs`.)
+
+**Lane rules** (checked every time the lane list is saved; each problem is explained in a sentence and tied to the field to fix):
+- Every lane needs its own id (letters, digits, dashes, underscores; it never changes once albums are queued), a name, an inbox folder and a library folder, each a full path: a drive letter such as `E:\` or a network path such as `\\server\share`.
+- Two lanes may not share an inbox, or albums would be filed in the wrong library.
+- An inbox may not be inside another lane's inbox: both lanes would see the same albums.
+- An inbox and a library folder may not be the same folder, or inside each other. Music already in the library would be picked up again as a new download. This is checked for a lane's own library and for every other lane's.
+- Folder names are compared without regard to capital letters, slash direction or a trailing slash, so `E:\Downloads\Music\` and `e:/downloads/music` count as the same folder.
+- A lane cannot be removed while one of its albums is being checked or filed. Removing a lane never touches files.
+
+**The health check (preflight)** tries what Label Maker will really do, as the account Emby runs as, with small throw-away test files (their names start with a dot and they are deleted again):
+- *Inbox found* and *Library found*: the folders can be reached. If not, the message says to check the folder or share and which account needs to be able to open it.
+- *Inbox changes*: Label Maker can create, rename and delete a file in the inbox. It needs this because it moves albums out of the inbox. If not: "Give the account Emby runs as (NAME) Modify permission on that folder."
+- *Library changes*: Label Maker can create a folder and a file in the library, and rename and delete the file. If not, the same fix is named for the share.
+- *Free space* on the library disk: a warning under 1 GB, an error under 100 MB, and "could not be read" (no problem) when the system will not say. The exact space needed is checked again before each album.
+- *Path length*: a warning when the library folder path is so long that albums with long names might not fit under the 240-character limit.
+- *Same disk*: good to know, never a problem. Different disks mean each file is copied, checked and then deleted from the inbox, so the first big albums take longer.
+A lane with any error is left alone until the problem is fixed, and the settings page shows it in red.
+
+**Memory of MusicBrainz answers.** Label Maker keeps every answer it gets from MusicBrainz on disk, so the same question is never asked twice (it also keeps you well inside MusicBrainz's one-request-a-second rule, and lets an album be checked again offline). How long an answer is trusted depends on the question: an album edition's own data 30 days, the list of editions of an album 3 days, a search 1 day, and "MusicBrainz has no such thing" 1 day. Busy or failed answers are never kept, an unreadable file simply counts as not remembered, and the oldest answers are dropped first when there are more than 20,000.
 
 ## 9. Glossary
 - **Release**: one specific published version of an album, with a fixed song list. Has a MusicBrainz id.

@@ -122,6 +122,9 @@ namespace LabelMaker.Core.MusicBrainz
         /// <summary>How many times a busy answer is retried before the lookup gives up.</summary>
         public int MaxRetries { get; set; } = 4;
 
+        /// <summary>Optional: answers are read from and stored in it, and a hit costs no request and no wait.</summary>
+        public IResponseCache? Cache { get; set; }
+
         public MusicBrainzClient(HttpMessageHandler handler, string userAgent, string baseUrl = DefaultBaseUrl)
         {
             if (handler == null) throw new ArgumentNullException(nameof(handler));
@@ -317,6 +320,10 @@ namespace LabelMaker.Core.MusicBrainz
 
         private async Task<string?> GetWithRetriesAsync(string url, CancellationToken cancellation)
         {
+            if (Cache != null && Cache.TryGet(url, out var cachedStatus, out var cachedBody))
+            {
+                return cachedStatus == HttpStatusCode.NotFound ? null : cachedBody;
+            }
             for (int attempt = 0; ; attempt++)
             {
                 await WaitTurnAsync(cancellation).ConfigureAwait(false);
@@ -331,8 +338,17 @@ namespace LabelMaker.Core.MusicBrainz
                     throw new MusicBrainzUnavailableException("MusicBrainz could not be reached: " + e.Message);
                 }
                 using var _ = response;
-                if (response.StatusCode == HttpStatusCode.NotFound) return null;
-                if (response.IsSuccessStatusCode) return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    Cache?.Put(url, HttpStatusCode.NotFound, string.Empty);
+                    return null;
+                }
+                if (response.IsSuccessStatusCode)
+                {
+                    var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    Cache?.Put(url, HttpStatusCode.OK, text);
+                    return text;
+                }
 
                 bool busy = response.StatusCode == (HttpStatusCode)503 || response.StatusCode == (HttpStatusCode)429;
                 if (!busy) throw new MusicBrainzUnavailableException($"MusicBrainz answered {(int)response.StatusCode}.");

@@ -9,6 +9,7 @@ using LabelMaker.Core.Inbox;
 using LabelMaker.Core.Matching;
 using LabelMaker.Core.Models;
 using LabelMaker.Core.MusicBrainz;
+using LabelMaker.Core.Naming;
 using LabelMaker.Core.Pipeline;
 using LabelMaker.Core.Tags;
 
@@ -357,6 +358,82 @@ namespace LabelMaker.Core.Review
             item.Reason = "You undid this album. It is back in the inbox with its old tags and names, and waits for your decision.";
             Save(item);
             return new ReviewResult { Success = true, Message = item.Reason, State = item.State };
+        }
+
+        // ------------------------------------------------------------------ splitting a folder that holds several albums
+
+        /// <summary>
+        /// Puts each album of a mixed folder in a folder of its own inside it, named after the album, with each file's lyrics file. Nothing is
+        /// renamed or tagged: files only move within the inbox, keeping their subfolders (CD1, CD2), and a cover or other loose file stays
+        /// where it was. Each new folder is then picked up as an album on the next pass. Albums are told apart by the album name in the tags, so
+        /// every file needs one.
+        /// </summary>
+        public ReviewResult SplitByAlbum(string id)
+        {
+            var open = Open(id, requireOpenState: true);
+            if (open.Failure != null) return open.Failure;
+            var c = open.Context!;
+            if (c.Unit.Kind != UnitKind.Album) return ReviewResult.Fail("Only an album folder can be split.", c.Item.State);
+
+            var clusters = AlbumProcessor.ClusterByAlbum(c.Files);
+            if (clusters.Count < 2) return ReviewResult.Fail("The tags name only one album in this folder, so there is nothing to split.", c.Item.State);
+            var unnamed = c.Files.Where(f => string.IsNullOrWhiteSpace(f.Tags.Album)).ToList();
+            if (unnamed.Count > 0)
+            {
+                return ReviewResult.Fail($"{unnamed.Count} file(s) have no album name in their tags ({string.Join(", ", unnamed.Take(3).Select(f => Path.GetFileName(f.Path)))}), so Label Maker cannot tell which album they belong to. Fix their tags or move them out first.", c.Item.State);
+            }
+
+            var folder = c.Unit.Folder;
+            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var plan = new List<(AlbumProcessor.AlbumCluster Cluster, string Folder)>();
+            foreach (var cluster in clusters)
+            {
+                var baseName = PathSanitiser.Component(cluster.Name);
+                if (baseName.Length == 0) baseName = "Album";
+                var candidate = baseName;
+                for (int n = 2; used.Contains(candidate) || _ops.DirectoryExists(Path.Combine(folder, candidate)) || _ops.FileExists(Path.Combine(folder, candidate)); n++)
+                {
+                    candidate = $"{baseName} ({n})";
+                }
+                used.Add(candidate);
+                plan.Add((cluster, candidate));
+            }
+
+            var moved = new List<(string From, string To)>();
+            try
+            {
+                foreach (var (cluster, name) in plan)
+                {
+                    foreach (var file in cluster.Files)
+                    {
+                        foreach (var source in SidecarsAndSelf(file.Path).Distinct(StringComparer.OrdinalIgnoreCase))
+                        {
+                            var target = Path.Combine(folder, name, Path.GetRelativePath(folder, source));
+                            SafeMover.Move(_ops, source, target);
+                            moved.Add((source, target));
+                        }
+                    }
+                }
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                bool back = true;
+                foreach (var (from, to) in Enumerable.Reverse(moved))
+                {
+                    try { SafeMover.Move(_ops, to, from); } catch (Exception inner) when (inner is IOException || inner is UnauthorizedAccessException) { back = false; }
+                }
+                foreach (var dir in plan.Select(p => Path.Combine(folder, p.Folder)))
+                {
+                    RemoveEmptyFoldersUpTo(dir, folder);
+                }
+                return ReviewResult.Fail("The folder could not be split (" + e.Message + ")." + (back ? " Everything was put back." : " Some files may be inside the new folders."), c.Item.State);
+            }
+
+            c.Item.State = QueueState.Skipped;
+            c.Item.Held = true;
+            c.Item.Reason = $"Split into {plan.Count} albums ({string.Join(", ", plan.Select(p => p.Folder))}). Each is checked on the next pass.";
+            Save(c.Item);
+            return new ReviewResult { Success = true, Message = c.Item.Reason, State = c.Item.State };
         }
 
         // ------------------------------------------------------------------ internals

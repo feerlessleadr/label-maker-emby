@@ -78,7 +78,7 @@ namespace LabelMaker.Core.Pipeline
                 return new ProcessOutcome
                 {
                     State = QueueState.NeedsReview,
-                    Reason = $"This folder holds {DistinctAlbums(files)} different albums by their tags. Label Maker does not split folders yet, so please sort them into one folder each.",
+                    Reason = $"This folder holds {DistinctAlbums(files)} different albums by their tags. Use \"Split by album\" on the review screen to put each album in its own folder, or sort them yourself.",
                 };
             }
 
@@ -163,15 +163,30 @@ namespace LabelMaker.Core.Pipeline
         }
 
         /// <summary>How many different albums the files' tags name (names that are the same album with a subtitle count once).</summary>
-        internal static int DistinctAlbums(IReadOnlyList<AlbumFile> files)
+        internal static int DistinctAlbums(IReadOnlyList<AlbumFile> files) => ClusterByAlbum(files).Count;
+
+        /// <summary>The files grouped by the album their tags name (names that are the same album with a subtitle share a group). Files with no album tag belong to no group.</summary>
+        internal static List<AlbumCluster> ClusterByAlbum(IReadOnlyList<AlbumFile> files)
         {
-            var clusters = new List<string>();
-            foreach (var name in files.Select(f => f.Tags.Album).Where(a => !string.IsNullOrWhiteSpace(a)))
+            var clusters = new List<AlbumCluster>();
+            foreach (var file in files.Where(f => !string.IsNullOrWhiteSpace(f.Tags.Album)))
             {
-                var cleaned = AlbumNameCleaner.ForSearch(name);
-                if (!clusters.Any(c => TitleNormaliser.AlbumSimilarity(c, cleaned) >= 0.85)) clusters.Add(cleaned);
+                var cleaned = AlbumNameCleaner.ForSearch(file.Tags.Album);
+                var cluster = clusters.FirstOrDefault(c => TitleNormaliser.AlbumSimilarity(c.Key, cleaned) >= 0.85);
+                if (cluster == null) clusters.Add(cluster = new AlbumCluster { Key = cleaned, Name = file.Tags.Album.Trim() });
+                cluster.Files.Add(file);
             }
-            return clusters.Count;
+            return clusters;
+        }
+
+        internal sealed class AlbumCluster
+        {
+            public string Key { get; set; } = string.Empty;
+
+            /// <summary>The album name as written on the first file of the group.</summary>
+            public string Name { get; set; } = string.Empty;
+
+            public List<AlbumFile> Files { get; } = new List<AlbumFile>();
         }
 
         private static MatchSummary Summarise(MatchResult match) => new MatchSummary

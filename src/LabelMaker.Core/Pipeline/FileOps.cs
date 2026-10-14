@@ -36,6 +36,9 @@ namespace LabelMaker.Core.Pipeline
 
         /// <summary>False while another program has the file open (a download still being written, a virus scan): the file is not finished.</summary>
         bool CanOpenForRead(string path);
+
+        /// <summary>Free bytes on the volume or share that holds the path, or -1 when that cannot be told.</summary>
+        long FreeBytes(string path) => -1;
     }
 
     public sealed class RealFileOps : IFileOps
@@ -99,6 +102,26 @@ namespace LabelMaker.Core.Pipeline
 
         public bool SameVolume(string a, string b) =>
             string.Equals(Path.GetPathRoot(Path.GetFullPath(a)), Path.GetPathRoot(Path.GetFullPath(b)), StringComparison.OrdinalIgnoreCase);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+        private static extern bool GetDiskFreeSpaceEx(string directory, out ulong freeToCaller, out ulong total, out ulong totalFree);
+
+        public long FreeBytes(string path)
+        {
+            try
+            {
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    // Works for drive letters and for network paths (DriveInfo cannot do the latter).
+                    return GetDiskFreeSpaceEx(Path.GetFullPath(path), out var free, out _, out _) ? (long)free : -1;
+                }
+                return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path)) ?? "/").AvailableFreeSpace;
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException || e is System.ComponentModel.Win32Exception || e is EntryPointNotFoundException)
+            {
+                return -1;
+            }
+        }
     }
 
     /// <summary>

@@ -403,6 +403,81 @@ namespace LabelMaker.Tests
         }
 
         [Fact]
+        public void AMixedFolderIsSplitIntoOneFolderPerAlbumAndEachIsThenFoundOnItsOwn()
+        {
+            using var s = new InboxSandbox();
+            var a = s.AddTrack(@"Albums\Green Day\Mixed", "01.mp3", "Brat", 2, album: "Insomniac");
+            s.AddTrack(@"Albums\Green Day\Mixed\CD2", "01.mp3", "86", 7, disc: 2, album: "Insomniac");
+            s.AddTrack(@"Albums\Green Day\Mixed", "02.mp3", "Burnout", 1, album: "Dookie");
+            File.WriteAllText(Path.ChangeExtension(a, ".lrc"), "[00:01.00] words");
+            s.AddFile(@"Albums\Green Day\Mixed", "cover.jpg");
+            var store = new QueueStore(s.QueuePath);
+            var item = Enqueue(s, store);
+            Assert.Equal(QueueState.NeedsReview, item.State);
+
+            var result = Service(s, store, new FakeMusicBrainz()).SplitByAlbum(item.Id);
+
+            Assert.True(result.Success, result.Message);
+            var mixed = Path.Combine(s.Inbox, "Albums", "Green Day", "Mixed");
+            Assert.True(File.Exists(Path.Combine(mixed, "Insomniac", "01.mp3")));
+            Assert.True(File.Exists(Path.Combine(mixed, "Insomniac", "01.lrc")), "the lyrics file travels with its track");
+            Assert.True(File.Exists(Path.Combine(mixed, "Insomniac", "CD2", "01.mp3")), "disc folders are kept");
+            Assert.True(File.Exists(Path.Combine(mixed, "Dookie", "02.mp3")));
+            Assert.True(File.Exists(Path.Combine(mixed, "cover.jpg")), "a cover stays where it was");
+            var saved = store.Get(item.Id)!;
+            Assert.Equal(QueueState.Skipped, saved.State);
+            Assert.True(saved.Held);
+            Assert.Contains("Split into 2 albums", saved.Reason);
+
+            var units = new InboxScanner().Scan(s.Lane, new RealFileOps());
+            Assert.Equal(2, units.Count);
+            Assert.Contains(units, u => u.Files.Count == 2 && u.RelativeFolder.EndsWith("Insomniac"));
+            Assert.Contains(units, u => u.Files.Count == 1 && u.RelativeFolder.EndsWith("Dookie"));
+        }
+
+        [Fact]
+        public void SplittingIsRefusedForOneAlbumOrFilesWithNoAlbumName()
+        {
+            using var s = new InboxSandbox();
+            s.AddTrack(@"Albums\X\One", "01.mp3", "Brat", 2);
+            var store = new QueueStore(s.QueuePath);
+            var item = Enqueue(s, store);
+            var one = Service(s, store, new FakeMusicBrainz()).SplitByAlbum(item.Id);
+            Assert.False(one.Success);
+            Assert.Contains("only one album", one.Message);
+
+            using var t = new InboxSandbox();
+            t.AddTrack(@"Albums\X\Two", "01.mp3", "Brat", 2, album: "Insomniac");
+            t.AddTrack(@"Albums\X\Two", "02.mp3", "Burnout", 1, album: "Dookie");
+            t.AddTrack(@"Albums\X\Two", "03.mp3", "Mystery", 3, album: "");
+            var store2 = new QueueStore(t.QueuePath);
+            var item2 = Enqueue(t, store2);
+            var unnamed = Service(t, store2, new FakeMusicBrainz()).SplitByAlbum(item2.Id);
+            Assert.False(unnamed.Success);
+            Assert.Contains("no album name", unnamed.Message);
+            Assert.Equal(3, Directory.EnumerateFiles(t.Inbox, "*.mp3", SearchOption.AllDirectories).Count());
+            Assert.False(Directory.Exists(Path.Combine(t.Inbox, "Albums", "X", "Two", "Insomniac")));
+        }
+
+        [Fact]
+        public void ASplitNeverOverwritesAFolderThatIsAlreadyThere()
+        {
+            using var s = new InboxSandbox();
+            s.AddTrack(@"Albums\X\Mixed", "01.mp3", "Brat", 2, album: "Insomniac");
+            s.AddTrack(@"Albums\X\Mixed", "02.mp3", "Burnout", 1, album: "Dookie");
+            s.AddFile(@"Albums\X\Mixed\Insomniac", "notes.txt", "already here");
+            var store = new QueueStore(s.QueuePath);
+            var item = Enqueue(s, store);
+
+            var result = Service(s, store, new FakeMusicBrainz()).SplitByAlbum(item.Id);
+
+            Assert.True(result.Success, result.Message);
+            var mixed = Path.Combine(s.Inbox, "Albums", "X", "Mixed");
+            Assert.True(File.Exists(Path.Combine(mixed, "Insomniac", "notes.txt")));
+            Assert.True(File.Exists(Path.Combine(mixed, "Insomniac (2)", "01.mp3")));
+        }
+
+        [Fact]
         public async Task AnAlbumBeingWorkedOnOrAlreadyFiledIsRefused()
         {
             using var s = new InboxSandbox();

@@ -216,7 +216,7 @@ namespace LabelMaker.Core.Matching
                 {
                     if (attempts >= MaxSearches) break;
                     attempts++;
-                    int limit = shape == SearchShape.QuotedAlbumAndArtist ? 5 : 25;
+                    int limit = 25; // a common title can name many albums; one request returns them all
                     var groups = await _musicBrainz.SearchReleaseGroupsAsync(artist, variant, limit, shape, cancellation).ConfigureAwait(false);
 
                     // Albums whose name and artist both fit; if there are none, albums whose name fits (an artist can be credited under another
@@ -255,7 +255,9 @@ namespace LabelMaker.Core.Matching
             {
                 var top = candidates.OrderByDescending(c => c.Score).First();
                 notes.Add($"best edition checked: \"{top.Release.Title}\" by {top.Release.ArtistCredit} ({top.Release.Country} {top.Release.Date}), score {top.Score:0.00}, tracks {top.TrackScore:0.00}, {top.WeakFiles} weak file(s)");
-            }            var result = Finish(candidates, source, "No release was found for this album.");
+            }
+
+            var result = Finish(candidates, source, "No release was found for this album.");
             result.Notes = notes;
 
             // An album found only through the relaxed passes (MusicBrainz lists it under another name or artist than the tags say) is never
@@ -334,11 +336,19 @@ namespace LabelMaker.Core.Matching
 
         private IEnumerable<ReleaseGroupHit> ChooseGroups(IReadOnlyList<ReleaseGroupHit> groups, string album, string artist, bool requireArtist)
         {
-            return groups
+            var fitting = groups
                 .Where(g => (g.Score >= 80 || !requireArtist) && TitleNormaliser.AlbumSimilarity(g.Title, album) >= 0.85 && (!requireArtist || ArtistsAgree(artist, g.ArtistCredit)))
                 .OrderBy(g => g.SecondaryTypes.Count)
                 .ThenByDescending(g => g.Score)
-                .Take(_settings.MaxReleaseGroups);
+                .ToList();
+
+            // Albums with exactly the name on the files come first, and all of them are checked (up to 10): a very common title can name several
+            // different albums (a film soundtrack, a cast recording), and the right one must not be cut off by the usual limit.
+            var wanted = TitleNormaliser.Normalise(album);
+            var exact = fitting.Where(g => TitleNormaliser.Normalise(g.Title) == wanted).ToList();
+            var others = fitting.Where(g => TitleNormaliser.Normalise(g.Title) != wanted).ToList();
+            int limit = Math.Max(_settings.MaxReleaseGroups, Math.Min(exact.Count, 10));
+            return exact.Concat(others).Take(limit);
         }
 
         private MatchResult Finish(List<ReleaseVerification> candidates, string source, string noneFound)
