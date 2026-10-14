@@ -47,27 +47,27 @@ namespace LabelMaker.Tests
         private static List<string> Codes(params Lane[] lanes) => LaneValidator.Validate(lanes).Select(i => i.LaneId + ":" + i.Code).OrderBy(c => c).ToList();
 
         [Fact]
-        public void TheOwnersFourLaneLayoutIsAccepted()
+        public void AFourLaneLayoutIsAccepted()
         {
             var issues = Codes(
-                L("main", @"E:\Downloads\Music", @"\\server\main-share"),
-                L("kids", @"E:\Downloads\KidsMusic", @"\\server\kids-share"),
-                L("shared", @"E:\Downloads\SharedMusic", @"\\server\shared-share"),
-                L("parents", @"E:\Downloads\ParentsMusic", @"\\server\parents-share"));
+                L("rock", @"D:\Inbox\Rock", @"\\nas\rock"),
+                L("jazz", @"D:\Inbox\Jazz", @"\\nas\jazz"),
+                L("folk", @"D:\Inbox\Folk", @"\\nas\folk"),
+                L("blues", @"D:\Inbox\Blues", @"\\nas\blues"));
             Assert.Empty(issues);
         }
 
         [Fact]
         public void TwoLanesMayNotShareAnInboxEvenWhenSpelledDifferently()
         {
-            var issues = Codes(L("a", @"E:\Downloads\Music", @"\\s\a"), L("b", @"e:/downloads/music/", @"\\s\b"));
+            var issues = Codes(L("a", @"D:\Inbox\Rock", @"\\s\a"), L("b", @"d:/inbox/rock/", @"\\s\b"));
             Assert.Equal(new[] { "a:SharedInbox", "b:SharedInbox" }, issues);
         }
 
         [Fact]
         public void AnInboxInsideAnotherInboxIsRefused()
         {
-            var issues = Codes(L("a", @"E:\Downloads", @"\\s\a"), L("b", @"E:\Downloads\Kids", @"\\s\b"));
+            var issues = Codes(L("a", @"D:\Inbox", @"\\s\a"), L("b", @"D:\Inbox\Jazz", @"\\s\b"));
             Assert.Equal(new[] { "b:InboxNesting" }, issues);
         }
 
@@ -78,7 +78,7 @@ namespace LabelMaker.Tests
             Assert.Contains("a:InboxIsLibrary", Codes(L("a", @"E:\Music", @"E:\Music\Library")));
             Assert.Contains("a:InboxIsLibrary", Codes(L("a", @"\\s\share", @"\\s\share")));
             // Another lane's library inside this lane's inbox would be filed into and then scanned again.
-            Assert.Contains("a:LibraryInsideInbox", Codes(L("a", @"E:\Downloads", @"\\s\a"), L("b", @"E:\Other", @"E:\Downloads\Library")));
+            Assert.Contains("a:LibraryInsideInbox", Codes(L("a", @"D:\Inbox", @"\\s\a"), L("b", @"D:\Other", @"D:\Inbox\Library")));
         }
 
         [Fact]

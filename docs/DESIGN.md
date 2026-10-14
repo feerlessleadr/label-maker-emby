@@ -212,10 +212,10 @@ Tag writing is shared with the planned **Tag Team** bulk tag editor: build the w
 Re-tagging the existing library (that is Tag Team / a later "audit" mode), classical work/movement handling, archive extraction, audiobooks/podcasts, lyrics fetching (Hall Pass has it), genre inference, AcoustID submission back to the community, multiple matching sources besides MusicBrainz (Discogs could be added later behind the same interface).
 
 ## 16. Owner answers (2026-10-13) and what they change
-Answers: Windows 11 server; downloads come from **MusicGrabber** (https://gitlab.com/g33kphr33k/musicgrabber, three Docker instances writing to `E:\Downloads\Music`, `E:\Downloads\KidsMusic`, `E:\Downloads\SharedMusic`); Picard naming script supplied; inboxes are outside Emby; one Emby music library with four folders (main, kids, parents, shared) with per-user folder access set in Emby; no match = stay in the inbox; notifications through Emby/Embidextrous, no outside service; new name wanted.
+Answers: Windows 11 server; downloads come from **MusicGrabber** (https://gitlab.com/g33kphr33k/musicgrabber, three Docker instances writing to three inbox folders); Picard naming script supplied; inboxes are outside Emby; one Emby music library with four folders (main, kids, parents, shared) with per-user folder access set in Emby; no match = stay in the inbox; notifications through Emby/Embidextrous, no outside service; new name wanted.
 
 ### 16.1 Windows server (no Docker for Emby)
-- **Mapped drive letters are per logon session.** If Emby runs as a Windows service it cannot see `V:\`. The library paths must be used as Emby itself stores them (it shows UNC paths underneath), and the account Emby runs as needs write permission on the shares. The preflight must test with the same identity Emby runs under and say exactly which share or NTFS permission is missing. Lane paths accept UNC (`\\<server>\<main-share>`) and drive letters; UNC is recommended.
+- **Mapped drive letters are per logon session.** If Emby runs as a Windows service it cannot see `V:\`. The library paths must be used as Emby itself stores them (it shows UNC paths underneath), and the account Emby runs as needs write permission on the shares. The preflight must test with the same identity Emby runs under and say exactly which share or NTFS permission is missing. Lane paths accept UNC (`\\<server>\<share>`) and drive letters; UNC is recommended.
 - **`E:` (local) to a network share is always a cross-volume move**: copy, verify (size + hash read back over SMB), then delete the source. Atomic rename is only available within a volume. Expect slow first moves of big FLAC albums; progress is shown per album.
 - **Path length**: keep full destination paths under about 240 characters (260 limit unless long paths are enabled); SMB adds no extra, but the sanitiser must count the share path.
 - **Files locked** by MusicGrabber, antivirus or Emby: retry with back-off, never fail an album on a single transient lock.
@@ -234,10 +234,10 @@ Answers: Windows 11 server; downloads come from **MusicGrabber** (https://gitlab
 ### 16.3 Lanes for this setup (confirmed 2026-10-13)
 | Inbox | Library folder |
 |---|---|
-| `E:\Downloads\Music` | `\\<server>\<main-share>` |
-| `E:\Downloads\KidsMusic` | `\\<server>\<kids-share>` |
-| `E:\Downloads\SharedMusic` | `\\<server>\<shared-share>` |
-| (a parents' inbox will be added later) | `\\<server>\<parents-share>` |
+| `<main inbox>` | `\\<server>\<main library share>` |
+| `<kids inbox>` | `\\<server>\<kids library share>` |
+| `<shared inbox>` | `\\<server>\<shared library share>` |
+| (a parents' inbox will be added later) | `\\<server>\<parents library share>` |
 
 **Lanes are fully editable at any time: add, edit, delete.** The settings page has a lane list with Add, Edit (name, inbox, library folder, auto-apply, thresholds, template) and Remove. Rules:
 - A lane's paths are validated and preflighted on save.

@@ -38,9 +38,9 @@ namespace LabelMaker.Core.Inbox
                 if (!SafeId.IsMatch(lane.Id ?? string.Empty)) Add(lane, "BadId", label + " needs an id of 1 to 40 letters, digits, dashes or underscores.");
                 if (string.IsNullOrWhiteSpace(lane.Name)) Add(lane, "NoName", label + " needs a name.");
                 if (string.IsNullOrWhiteSpace(lane.InboxPath)) Add(lane, "NoInbox", label + " needs an inbox folder.");
-                else if (!IsAbsolute(lane.InboxPath)) Add(lane, "NotAbsolute", label + " has an inbox folder that is not a full path. Use a drive letter such as E:\\ or a network path such as \\\\server\\share.");
+                else if (!IsAbsolute(lane.InboxPath)) Add(lane, "NotAbsolute", label + " has an inbox folder that is not a full path. Use a drive letter such as D:\\ or a network path such as \\\\nas\\music.");
                 if (string.IsNullOrWhiteSpace(lane.LibraryPath)) Add(lane, "NoLibrary", label + " needs a library folder.");
-                else if (!IsAbsolute(lane.LibraryPath)) Add(lane, "NotAbsolute", label + " has a library folder that is not a full path. Use a drive letter such as E:\\ or a network path such as \\\\server\\share.");
+                else if (!IsAbsolute(lane.LibraryPath)) Add(lane, "NotAbsolute", label + " has a library folder that is not a full path. Use a drive letter such as D:\\ or a network path such as \\\\nas\\music.");
             }
 
             foreach (var group in lanes.Where(l => !string.IsNullOrEmpty(l.Id)).GroupBy(l => l.Id, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1))

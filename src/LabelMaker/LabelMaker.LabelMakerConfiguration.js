@@ -506,17 +506,28 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
             const holder = this.view.querySelector('#lmLaneRows');
             const box = el('div', 'lm-lane');
             const fields = el('div', 'lm-lanefields');
-            const field = (label, value, placeholder) => {
+            // A folder box has a Browse button that opens Emby's own folder picker on the server's file system.
+            const field = (label, value, placeholder, browseHeader) => {
                 const wrap = el('div');
                 wrap.appendChild(el('div', 'lm-small', label));
-                const input = el('input'); input.type = 'text'; input.value = value || ''; input.placeholder = placeholder || ''; input.style.width = '100%';
-                wrap.appendChild(input);
+                const input = el('input'); input.type = 'text'; input.value = value || ''; input.placeholder = placeholder || '';
+                if (browseHeader) {
+                    const row = el('div', 'lm-pathrow');
+                    input.style.flex = '1 1 auto';
+                    const browse = el('button', 'raised emby-button', 'Browse...'); browse.type = 'button';
+                    browse.addEventListener('click', () => this.browseFolder(input, browseHeader));
+                    row.appendChild(input); row.appendChild(browse);
+                    wrap.appendChild(row);
+                } else {
+                    input.style.width = '100%';
+                    wrap.appendChild(input);
+                }
                 fields.appendChild(wrap);
                 return input;
             };
-            const name = field('Name (for example Main music)', lane.Name, 'Main music');
-            const inbox = field('Inbox folder (where downloads arrive)', lane.InboxPath, 'E:\\Downloads\\Music');
-            const library = field('Library folder (where albums are filed)', lane.LibraryPath, '\\\\server\\music');
+            const name = field('Name (what you call this lane)', lane.Name, 'For example Rock');
+            const inbox = field('Inbox folder (where downloads arrive)', lane.InboxPath, 'Click Browse, or type a full path', 'Choose the inbox folder');
+            const library = field('Library folder (where albums are filed)', lane.LibraryPath, 'Click Browse, or type a full path', 'Choose the library folder');
             box.appendChild(fields);
             const ask = el('label'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = !lane.AutoApply;
             ask.appendChild(cb); ask.appendChild(document.createTextNode(' Always ask me first for this lane (nothing is filed without your approval on the Albums tab)'));
@@ -534,6 +545,27 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
                 this.laneRows = this.laneRows.filter(x => x !== entry);
                 box.parentNode.removeChild(box);
             });
+        }
+
+        // Emby's own folder picker (the one its library setup uses): it browses the server's drives and network shares and checks the folder can be written.
+        browseFolder(input, header) {
+            if (!window.Emby || typeof Emby.importModule !== 'function') {
+                toast({ type: 'info', text: 'The folder picker is not available here. Type the full path instead.' });
+                return;
+            }
+            Emby.importModule('./modules/directorybrowser/directorybrowser.js').then((DirectoryBrowser) => {
+                const picker = new DirectoryBrowser();
+                picker.show({
+                    path: input.value.trim() || undefined,
+                    header: header,
+                    instruction: 'Pick a folder on the server that runs Emby. Label Maker needs permission to create, rename and delete files in it.',
+                    validateWriteable: true,
+                    callback: (path) => {
+                        if (path) { input.value = path; }
+                        picker.close();
+                    }
+                }).catch(() => { /* the dialog was closed without a choice */ });
+            }).catch(() => toast({ type: 'info', text: 'The folder picker could not be opened. Type the full path instead.' }));
         }
 
         collectLanes() {

@@ -1,6 +1,6 @@
 # Installing the Label Maker trial build
 
-This is a **trial build** (version 0.1.3.0; if you installed 0.1.1.0, update: its page did not open), not a release. It starts in **dry run**: it matches albums and shows what it would do, and moves or changes nothing by itself. Your own choices on the Albums tab are still carried out.
+This is a **trial build** (version 0.1.4.0; if you installed 0.1.1.0, update: its page did not open), not a release. It starts in **dry run**: it matches albums and shows what it would do, and moves or changes nothing by itself. Your own choices on the Albums tab are still carried out.
 
 ## 1. Install
 1. Close Emby, or leave it running and restart it at step 3.
@@ -12,8 +12,8 @@ Label Maker keeps its files in `<Emby data>\plugins\configurations\LabelMaker.Da
 
 ## 2. Set up one lane first
 Open **Label Maker > Settings > Lanes > Add a lane**:
-- **Inbox folder:** where MusicGrabber puts finished downloads, for example `E:\Downloads\Music`. This is the folder that holds `Albums`.
-- **Library folder:** the folder Emby's music library reads, for example `\\<server>\<main-share>`. A network path is the safer choice when Emby runs as a Windows service, because mapped drive letters belong to one logon session.
+- **Inbox folder:** where MusicGrabber puts finished downloads. Press **Browse...** to pick it on the server (Emby's own folder picker), or type a full path such as `D:\Music Inbox`. This is the folder that holds `Albums`.
+- **Library folder:** the folder Emby's music library reads (**Browse...** or type a path such as `\\nas\music`). A network path is the safer choice when Emby runs as a Windows service, because mapped drive letters belong to one logon session.
 - Save, then open **Dashboard > Check the folders**. Every line should be OK. If one says the library cannot be written, give the account Emby runs as **Modify** permission on that share and folder (the message names the account).
 
 Start with the main music lane only. Add the kids and shared lanes when the first one behaves.

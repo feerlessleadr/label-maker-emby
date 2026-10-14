@@ -29,6 +29,8 @@
         .lm-lane { border: 1px solid rgba(128,128,128,.35); border-radius: .5em; padding: .8em 1em; margin: .8em 0; }
         .lm-lane .lm-lanefields { display: flex; flex-wrap: wrap; gap: 1em; }
         .lm-lane .lm-lanefields > div { flex: 1 1 260px; }
+        .lm-pathrow { display: flex; gap: .5em; align-items: center; }
+        .lm-pathrow input { min-width: 0; }
         .lm-pager { display: flex; gap: 1em; align-items: center; margin: 1em 0; }
         .lm-good { color: #66bb6a; }
         .lm-small { font-size: .9em; opacity: .85; }
@@ -131,7 +133,7 @@
                 <form id="lmForm">
                     <div class="lm-card">
                         <h3>Lanes</h3>
-                        <div class="fieldDescription">A lane is one inbox folder (where downloads arrive) and the library folder its albums are filed into. Deleting a lane never touches any file. Use full paths: a drive letter such as <b>E:\Downloads\Music</b> or a network path such as <b>\\server\share</b>. A network path is the safer choice when Emby runs as a service. Two lanes cannot share an inbox, and an inbox cannot be inside a library folder.</div>
+                        <div class="fieldDescription">A lane is one inbox folder (where downloads arrive) and the library folder its albums are filed into. Deleting a lane never touches any file. Use full paths: a drive letter such as <b>D:\Music Inbox</b> or a network path such as <b>\\nas\music</b>. A network path is the safer choice when Emby runs as a service. Two lanes cannot share an inbox, and an inbox cannot be inside a library folder.</div>
                         <div id="lmLaneRows"></div>
                         <div class="lm-row"><button is="emby-button" type="button" id="lmAddLane" class="raised"><span>Add a lane</span></button></div>
                     </div>

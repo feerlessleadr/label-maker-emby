@@ -12,7 +12,7 @@
   absolute paths (only the folder path under the library root), no server or share names, and no account names.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File Export-LibraryTags.ps1 -Library "\\server\Music" -MaxAlbums 250
+  powershell -ExecutionPolicy Bypass -File Export-LibraryTags.ps1 -Library "\\nas\music" -MaxAlbums 250
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Library,

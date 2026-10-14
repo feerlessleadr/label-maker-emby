@@ -1,47 +1,52 @@
 <#
-Live regression test for the Label Maker plugin on the local test Emby server (see CLAUDE.md for the server).
-It deploys the built DLL, runs the whole flow with real tagged files and the real MusicBrainz, watches the phone alerts through a throw-away
-administrator websocket, and then removes everything it made and puts the server back the way it found it.
+Live regression test for the Label Maker plugin on a throw-away Emby Server of its own (never the shared test server).
+It copies the Emby program folder to a temp folder, starts that copy on its own port with an empty data folder, completes Emby's
+first-run wizard through its API, deploys the built DLL, runs the whole flow with real tagged files and the real MusicBrainz, watches
+the phone alerts through an administrator websocket, loads the page script the plugin serves in a real browser, and then deletes
+everything it made. Nothing outside its temp folder is touched and no existing Emby user, library or setting is involved.
 
-  powershell -ExecutionPolicy Bypass -File tools\Test-LabelMakerPlugin.ps1 [-DllPath <path>] [-KeepRunning]
+  powershell -ExecutionPolicy Bypass -File tools\Test-LabelMakerPlugin.ps1 [-DllPath <path>] [-Port 8196] [-KeepRunning]
 
-Needs: the admin API key in %USERPROFILE%\.emby-spike-key (never printed), network access to musicbrainz.org.
-Never touches the server's existing users: it creates one throw-away administrator and deletes it. Exit code 0 only when every check passed.
+Needs: an unpacked Emby Server (the folder that holds `system\EmbyServer.exe`; default is the one in Downloads), network access to
+musicbrainz.org, and Google Chrome for the page check. Exit code 0 only when every check passed.
+With -KeepRunning the instance and its login are left up (the login is printed) so the page can be tried by hand; stop it with
+tools\Stop-LabelMakerTestInstance.ps1.
 #>
 param(
   [string]$DllPath = '',
   [string]$ServerRoot = (Join-Path $env:USERPROFILE 'Downloads\embyserver-win-x64-4.10.1.0'),
-  [string]$WorkRoot = 'C:\claude',
-  [switch]$KeepRunning,
-  [switch]$Force
+  [int]$Port = 8196,
+  [switch]$KeepRunning
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 [Environment]::CurrentDirectory = $repo
 if ($DllPath -eq '') { $DllPath = Join-Path $repo 'src\LabelMaker\bin\Release\net6.0\LabelMaker.dll' }
 if (-not (Test-Path $DllPath)) { throw "Build first: $DllPath not found." }
+if (-not (Test-Path (Join-Path $ServerRoot 'system\EmbyServer.exe'))) { throw "No Emby Server found at $ServerRoot (system\EmbyServer.exe)." }
 
-$base = 'http://localhost:8096/emby'
+$base = "http://127.0.0.1:$Port/emby"
 $pluginId = 'a29bf822-41ab-4e14-a814-a8d386e7f745'
-$pluginsDir = Join-Path $ServerRoot 'programdata\plugins'
-$configDir = Join-Path $pluginsDir 'configurations'
-$key = (Get-Content (Join-Path $env:USERPROFILE '.emby-spike-key')).Trim()
-$H = @{ 'X-Emby-Token' = $key }
+$stamp = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+$tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("lm-live-$stamp")
+$rigSystem = Join-Path $tempRoot 'system'
+$rigData = Join-Path $tempRoot 'programdata'
+$inbox = Join-Path $tempRoot 'inbox'
+$library = Join-Path $tempRoot 'library'
 $results = New-Object System.Collections.ArrayList
-$work = Join-Path $WorkRoot ('lm-live-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
-$inbox = Join-Path $work 'inbox'
-$library = Join-Path $work 'library'
-$wasRunning = [bool](Get-Process | Where-Object ProcessName -like 'Emby*')
-$user = $null
+$script:rigProcessId = 0
 $ws = $null
 $script:pending = $null
 $script:buf = New-Object byte[] 65536   # one buffer for the whole run: a read that is still waiting writes into it
+$script:H = @{}
+$script:Token = ''
+$script:Password = ''
 
 function Check([string]$name, [bool]$ok, [string]$detail = '') {
   [void]$results.Add([pscustomobject]@{ Name = $name; Ok = $ok; Detail = $detail })
   if ($ok) { Write-Host ("  ok   " + $name) } else { Write-Host ("  FAIL " + $name + "  " + $detail) -ForegroundColor Red }
 }
-function Api([string]$method, [string]$path, $body = $null, $headers = $H) {
+function Api([string]$method, [string]$path, $body = $null, $headers = $script:H) {
   $args2 = @{ Method = $method; Uri = "$base$path"; Headers = $headers }
   if ($body -ne $null) { $args2.Body = ($body | ConvertTo-Json -Depth 8); $args2.ContentType = 'application/json' }
   Invoke-RestMethod @args2
@@ -59,12 +64,58 @@ function WaitUntil([scriptblock]$cond, [int]$seconds, [int]$every = 2) {
   while ((Get-Date) -lt $end) { if (& $cond) { return $true }; Start-Sleep $every }
   return $false
 }
-function Stop-Emby { Get-Process | Where-Object ProcessName -like 'Emby*' | Stop-Process -Force; Start-Sleep 3 }
-function Start-Emby {
-  Start-Process (Join-Path $ServerRoot 'system\EmbyServer.exe') -ArgumentList ('-programdata "' + (Join-Path $ServerRoot 'programdata') + '"') -WindowStyle Minimized
-  $up = WaitUntil { try { $null = Invoke-RestMethod -Headers $H "$base/System/Info"; $true } catch { $false } } 150 3
-  if (-not $up) { throw 'Emby did not come up.' }
+
+# ---- the throw-away Emby instance ------------------------------------------------------------------------------------------
+function Start-Rig {
+  Write-Host '-- starting a private Emby instance'
+  $busy = netstat -ano | Select-String -Pattern (":$Port\s+.*LISTENING")
+  if ($busy) { throw "Port $Port is already in use. Pass another one with -Port." }
+  New-Item -ItemType Directory -Force $tempRoot, (Join-Path $rigData 'config'), (Join-Path $rigData 'plugins') | Out-Null
+  Copy-Item (Join-Path $ServerRoot 'system') $rigSystem -Recurse -Force   # about 440 MB: Emby refuses to run a second copy from the same place
+  Copy-Item $DllPath (Join-Path $rigData 'plugins\LabelMaker.dll')
+  [IO.File]::WriteAllText((Join-Path $rigData 'config\system.xml'), @"
+<?xml version="1.0" encoding="utf-8"?>
+<ServerConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <HttpServerPortNumber>$Port</HttpServerPortNumber>
+  <HttpsPortNumber>$($Port + 1)</HttpsPortNumber>
+  <PublicPort>$Port</PublicPort>
+  <PublicHttpsPort>$($Port + 1)</PublicHttpsPort>
+  <EnableHttps>false</EnableHttps>
+  <EnableUPnP>false</EnableUPnP>
+  <AutoRunWebApp>false</AutoRunWebApp>
+</ServerConfiguration>
+"@, (New-Object Text.UTF8Encoding($false)))
+  $exe = Join-Path $rigSystem 'EmbyServer.exe'
+  $argList = @('-programdata', "`"$rigData`"", '-ffmpeg', "`"$(Join-Path $rigSystem 'ffmpeg.exe')`"", '-ffprobe', "`"$(Join-Path $rigSystem 'ffprobe.exe')`"", '-restartexitcode', '3')
+  $proc = Start-Process $exe -ArgumentList $argList -PassThru -WindowStyle Hidden
+  $script:rigProcessId = $proc.Id
+  $up = WaitUntil { try { $null = Invoke-RestMethod "$base/System/Info/Public"; $true } catch { $false } } 180 3
+  if (-not $up) { throw 'The private Emby instance did not come up.' }
+  # Emby's first-run wizard, through its own API.
+  $json = 'application/json'
+  Invoke-RestMethod -Method Post -ContentType $json -Body '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}' "$base/Startup/Configuration" | Out-Null
+  $script:Password = [Guid]::NewGuid().ToString('N') + 'Aa1!'
+  try { Invoke-RestMethod "$base/Startup/User" | Out-Null } catch {}
+  Invoke-RestMethod -Method Post -ContentType $json -Body (@{ Name = 'lm-rig-admin'; Password = $script:Password } | ConvertTo-Json) "$base/Startup/User" | Out-Null
+  Invoke-RestMethod -Method Post -ContentType $json -Body '{"EnableRemoteAccess":false,"EnableAutomaticPortMapping":false}' "$base/Startup/RemoteAccess" | Out-Null
+  Invoke-RestMethod -Method Post "$base/Startup/Complete" | Out-Null
+  Start-Sleep 4
+  $auth = Invoke-RestMethod -Method Post -ContentType $json -Headers @{ 'X-Emby-Authorization' = 'MediaBrowser Client="lm-live", Device="probe", DeviceId="lm-live-1", Version="1"' } -Body (@{ Username = 'lm-rig-admin'; Pw = $script:Password } | ConvertTo-Json) "$base/Users/AuthenticateByName"
+  $script:Token = $auth.AccessToken
+  $script:H = @{ 'X-Emby-Token' = $script:Token }
+  $up2 = WaitUntil { try { (Api GET '/LabelMaker/Info').ApiLevel -eq 1 } catch { $false } } 120 3
+  if (-not $up2) { throw 'The Label Maker plugin did not answer in the private instance.' }
+  Start-Sleep 22   # the plugin waits 20 seconds before its first check
 }
+function Stop-Rig {
+  if ($script:rigProcessId -gt 0) {
+    try { Stop-Process -Id $script:rigProcessId -Force -ErrorAction SilentlyContinue } catch {}
+    # Emby may start helper processes of its own from the private folder; stop only those.
+    Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($rigSystem, [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }
+    Start-Sleep 3
+  }
+}
+
 # Reads websocket messages for a while; returns the LabelMaker.* ones as objects.
 function ReadWs([int]$seconds) {
   $out = New-Object System.Collections.ArrayList
@@ -109,19 +160,11 @@ try {
   Write-Host "== Label Maker live test ($DllPath)"
   Add-Type -Path (Join-Path $repo 'tools\TagLibSharp.dll')
 
-  if ($wasRunning) {
-    $sessions = @(Invoke-RestMethod -Headers $H "$base/Sessions" | Where-Object { $_.UserName -and $_.UserName -notlike 'lm-live-*' })
-    $busy = @($sessions | Where-Object { $_.LastActivityDate -and ([datetime]$_.LastActivityDate) -gt (Get-Date).AddMinutes(-10).ToUniversalTime() })
-    if ($busy.Count -gt 0 -and -not $Force) { throw 'Someone used the test server in the last 10 minutes. Run again later, or use -Force.' }
-  }
-  $hadDll = Test-Path (Join-Path $pluginsDir 'LabelMaker.dll')
-  if ($hadDll) { throw 'LabelMaker.dll is already in the test server plugins folder. Remove it first (this script leaves the server as it found it).' }
+  Write-Host '-- the page script, before anything starts'
+  $pre = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Check-PageScript.ps1') 2>&1 | Out-String
+  Check 'The page script in the source loads in a real browser without errors' ($LASTEXITCODE -eq 0) $pre.Trim()
 
-  Write-Host '-- deploy'
-  Stop-Emby
-  Copy-Item $DllPath (Join-Path $pluginsDir 'LabelMaker.dll')
-  Start-Emby
-  Start-Sleep 25   # the plugin waits 20 seconds before its first check
+  Start-Rig
 
   Write-Host '-- routes'
   $info = Api GET '/LabelMaker/Info'
@@ -131,41 +174,34 @@ try {
   Check 'Catalog has the five alert rules' (@($cat.Events).Count -eq 5 -and $cat.Service.ChannelId -eq 'music-ingest') ((@($cat.Events) | ForEach-Object { $_.Id }) -join ',')
   $st = Status
   Check 'Status has the counts, lanes, service and LatestSeq' ($st.Counts -and $st.Service.MusicBrainz -eq 'Ok' -and $st.LatestSeq -ne $null -and $st.MatchingVersion)
-  $page = Invoke-WebRequest -UseBasicParsing -Headers $H "$base/web/configurationpage?name=LabelMakerConfiguration"
+  $page = Invoke-WebRequest -UseBasicParsing -Headers $script:H "$base/web/configurationpage?name=LabelMakerConfiguration"
   Check 'The settings page is served' ($page.Content -match 'Label Maker')
   # The exact script and markup the plugin serves, loaded in a real browser: a script error here is the "menu item does nothing" failure.
-  $served = Join-Path $env:TEMP ('lm-served-' + [Guid]::NewGuid().ToString('N').Substring(0, 6))
+  $served = Join-Path $tempRoot 'served'
   New-Item -ItemType Directory -Force $served | Out-Null
-  Invoke-WebRequest -UseBasicParsing -Headers $H "$base/web/configurationpage?name=LabelMakerConfigurationjs" -OutFile (Join-Path $served 'page.js')
-  Invoke-WebRequest -UseBasicParsing -Headers $H "$base/web/configurationpage?name=LabelMakerConfiguration" -OutFile (Join-Path $served 'page.html')
+  Invoke-WebRequest -UseBasicParsing -Headers $script:H "$base/web/configurationpage?name=LabelMakerConfigurationjs" -OutFile (Join-Path $served 'page.js')
+  Invoke-WebRequest -UseBasicParsing -Headers $script:H "$base/web/configurationpage?name=LabelMakerConfiguration" -OutFile (Join-Path $served 'page.html')
   $pageOut = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Check-PageScript.ps1') -ScriptPath (Join-Path $served 'page.js') -HtmlPath (Join-Path $served 'page.html') 2>&1 | Out-String
   Check 'The page script the plugin serves loads in a real browser without errors' ($LASTEXITCODE -eq 0) $pageOut.Trim()
-  Remove-Item -Recurse -Force $served -ErrorAction SilentlyContinue
   $anon = $false; try { Invoke-RestMethod "$base/LabelMaker/Status" | Out-Null } catch { $anon = $true }
   Check 'A request with no token is refused' $anon
 
   Write-Host '-- settings are checked when saved'
-  $bad = TryApi POST "/Plugins/$pluginId/Configuration" ((Api GET "/Plugins/$pluginId/Configuration") | ForEach-Object { $_.Lanes = @(@{ Id = 'x'; Name = 'X'; InboxPath = 'relative\path'; LibraryPath = 'E:\lib'; AutoApply = $true }); $_ })
+  $bad = TryApi POST "/Plugins/$pluginId/Configuration" ((Api GET "/Plugins/$pluginId/Configuration") | ForEach-Object { $_.Lanes = @(@{ Id = 'x'; Name = 'X'; InboxPath = 'relative\path'; LibraryPath = 'D:\lib'; AutoApply = $true }); $_ })
   Check 'A lane with a relative path is refused with a plain message' ((-not $bad.Ok) -and ($bad.Data -match 'full path' -or $bad.Message -match '400|500')) ([string]$bad.Data)
   $badScore = TryApi POST "/Plugins/$pluginId/Configuration" ((Api GET "/Plugins/$pluginId/Configuration") | ForEach-Object { $_.AutoThreshold = 0.2; $_ })
   Check 'A threshold out of range is refused' (-not $badScore.Ok)
 
-  Write-Host '-- throw-away administrator websocket'
-  $pw = [Guid]::NewGuid().ToString('N') + 'Aa1!'
-  $user = Api POST '/Users/New' @{ Name = 'lm-live-admin' }
-  Api POST "/Users/$($user.Id)/Password" @{ NewPw = $pw; CurrentPw = '' } | Out-Null
-  $u = Api GET "/Users/$($user.Id)"; $p = $u.Policy; $p.IsAdministrator = $true
-  Api POST "/Users/$($user.Id)/Policy" $p | Out-Null
-  $auth = Api POST '/Users/AuthenticateByName' @{ Username = 'lm-live-admin'; Pw = $pw } @{ 'X-Emby-Authorization' = 'MediaBrowser Client="lm-live", Device="probe", DeviceId="lm-live-1", Version="1"' }
+  Write-Host '-- administrator websocket'
   $ws = New-Object System.Net.WebSockets.ClientWebSocket
-  $ws.ConnectAsync([Uri]("ws://localhost:8096/embywebsocket?api_key=" + $auth.AccessToken + "&deviceId=lm-live-1"), [Threading.CancellationToken]::None).Wait()
+  $ws.ConnectAsync([Uri]("ws://127.0.0.1:$Port/embywebsocket?api_key=$($script:Token)&deviceId=lm-live-1"), [Threading.CancellationToken]::None).Wait()
   Check 'The websocket connected' ($ws.State -eq 'Open')
 
   Write-Host '-- a lane, a dry run, and the alerts'
   New-Item -ItemType Directory -Force $inbox, $library | Out-Null
   Save-Config (Lane-Obj) $true
-  $pre = Api GET '/LabelMaker/Preflight'
-  $laneResult = @($pre.Lanes)[0]
+  $pre2 = Api GET '/LabelMaker/Preflight'
+  $laneResult = @($pre2.Lanes)[0]
   Check 'Preflight passes for the new lane' ($laneResult.CanRun -eq $true) (($laneResult.Checks | Where-Object { $_.Level -eq 'Error' } | ForEach-Object { $_.Message }) -join ' | ')
   Add-Album $inbox 'Green Day'
   Run-Pass; Start-Sleep 12; Run-Pass
@@ -175,7 +211,7 @@ try {
   Check 'A WouldApply alert was pushed to the administrator websocket' (@($msgs | Where-Object { $_.MessageType -eq 'LabelMaker.AutoApplied' -and $_.Data.Mode -eq 'WouldApply' }).Count -eq 1) (($msgs | ForEach-Object { $_.MessageType }) -join ',')
   Check 'Every alert carries the common fields' (@($msgs | Where-Object { $_.Data.ApiLevel -eq 1 -and $_.Data.Seq -gt 0 -and $_.Data.EventId -and $_.Data.ServerTimeUtc -and $_.Data.Event }).Count -eq @($msgs).Count -and @($msgs).Count -gt 0)
   $raw = ($msgs | ConvertTo-Json -Depth 8)
-  Check 'No alert carries a folder path' (($raw -notmatch [regex]::Escape($work)) -and ($raw -notmatch 'lm-live-'))
+  Check 'No alert carries a folder path' (($raw -notmatch [regex]::Escape($tempRoot)) -and ($raw -notmatch 'lm-live-'))
   Check 'Dry run changed nothing in the library' ((Count-Of 'Done') -eq 0 -and (Count-Mp3 $library) -eq 0 -and (Count-Mp3 $inbox) -eq 2)
 
   $ev = Api GET '/LabelMaker/Events?After=0&Limit=50'
@@ -214,12 +250,12 @@ try {
 
   Write-Host '-- a broken lane is reported once and recovered'
   $null = ReadWs 1
-  Remove-Item -Recurse -Force $library
+  [IO.Directory]::Delete($library, $true)
   Run-Pass; $null = WaitUntil { (@((Status).Lanes[0].Problems).Count -ge 1) } 30 1
   $prob = @((Status).Lanes[0].Problems)
   Check 'The status names the problem' ($prob.Count -ge 1 -and $prob[0].Kind -eq 'LibraryUnreachable' -and $prob[0].Blocking -eq $true) (($prob | ConvertTo-Json -Compress))
   $m2 = ReadWs 4
-  Check 'A LaneProblem alert was pushed with no path' (@($m2 | Where-Object { $_.MessageType -eq 'LabelMaker.LaneProblem' }).Count -eq 1 -and ((($m2 | ConvertTo-Json -Depth 8)) -notmatch [regex]::Escape($work)))
+  Check 'A LaneProblem alert was pushed with no path' (@($m2 | Where-Object { $_.MessageType -eq 'LabelMaker.LaneProblem' }).Count -eq 1 -and ((($m2 | ConvertTo-Json -Depth 8)) -notmatch [regex]::Escape($tempRoot)))
   New-Item -ItemType Directory -Force $library | Out-Null
   Run-Pass; $null = WaitUntil { @((Status).Lanes[0].Problems).Count -eq 0 } 30 1
   $m3 = ReadWs 4
@@ -227,7 +263,7 @@ try {
 
   Write-Host '-- real mode: a new album is filed by itself'
   Save-Config (Lane-Obj) $false
-  Remove-Item -Recurse -Force (Join-Path $inbox 'Albums') -ErrorAction SilentlyContinue
+  [IO.Directory]::Delete((Join-Path $inbox 'Albums'), $true)
   Add-Album $inbox 'Green Day'
   $null = ReadWs 1
   Run-Pass; Start-Sleep 12; Run-Pass
@@ -241,7 +277,7 @@ try {
   $cfg = Api GET "/Plugins/$pluginId/Configuration"; $cfg.SendPhoneAlerts = $false
   Api POST "/Plugins/$pluginId/Configuration" $cfg | Out-Null
   $seqBefore = (Api GET '/LabelMaker/Events').LatestSeq
-  Remove-Item -Recurse -Force $library; Run-Pass; Start-Sleep 3
+  [IO.Directory]::Delete($library, $true); Run-Pass; Start-Sleep 3
   Check 'With the master switch off nothing is sent or logged' ((Api GET '/LabelMaker/Events').LatestSeq -eq $seqBefore)
 }
 catch {
@@ -250,15 +286,15 @@ catch {
 finally {
   Write-Host '-- cleanup'
   try { if ($ws) { $ws.Dispose() } } catch {}
-  try { if ($user) { Invoke-RestMethod -Method Delete -Headers $H "$base/Users/$($user.Id)" | Out-Null; Write-Host '  throw-away user deleted' } } catch { Write-Host ('  could not delete the throw-away user: ' + $_.Exception.Message) -ForegroundColor Yellow }
-  if (-not $KeepRunning) {
-    Stop-Emby
-    foreach ($f in @((Join-Path $pluginsDir 'LabelMaker.dll'), (Join-Path $configDir 'LabelMaker.xml'))) { if (Test-Path $f) { [IO.File]::Delete($f) } }
-    $data = Join-Path $configDir 'LabelMaker.Data'
-    if (Test-Path $data) { Remove-Item -Recurse -Force $data }
-    if ($wasRunning) { Start-Emby; Write-Host '  server restarted (it was running before)' } else { Write-Host '  server left stopped (it was stopped before)' }
+  if ($KeepRunning -and $script:rigProcessId -gt 0) {
+    @{ Pid = $script:rigProcessId; Port = $Port; User = 'lm-rig-admin'; Password = $script:Password; Root = $tempRoot } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path ([IO.Path]::GetTempPath()) 'lm-live-instance.json')
+    Write-Host ("  private instance left running on port $Port (user lm-rig-admin, password " + $script:Password + "); stop it with tools\Stop-LabelMakerTestInstance.ps1")
   }
-  if (Test-Path $work) { Remove-Item -Recurse -Force $work }
+  else {
+    Stop-Rig
+    for ($i = 0; $i -lt 5 -and (Test-Path $tempRoot); $i++) { try { [IO.Directory]::Delete($tempRoot, $true) } catch { Start-Sleep 2 } }
+    if (Test-Path $tempRoot) { Write-Host "  could not remove $tempRoot; delete it by hand" -ForegroundColor Yellow } else { Write-Host '  private instance stopped and its folder deleted' }
+  }
   $failed = @($results | Where-Object { -not $_.Ok })
   Write-Host ''
   Write-Host ("== {0} checks, {1} failed" -f $results.Count, $failed.Count)

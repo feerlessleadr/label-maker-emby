@@ -185,11 +185,11 @@ Any change starts the 60 seconds again. After a restart of Emby every album also
 Status: built in the engine (2026-10-14); the settings page that shows them comes with the plugin. (Code: `Inbox/LaneValidator.cs`, `Pipeline/Preflight.cs`, `MusicBrainz/ResponseCache.cs`.)
 
 **Lane rules** (checked every time the lane list is saved; each problem is explained in a sentence and tied to the field to fix):
-- Every lane needs its own id (letters, digits, dashes, underscores; it never changes once albums are queued), a name, an inbox folder and a library folder, each a full path: a drive letter such as `E:\` or a network path such as `\\server\share`.
+- Every lane needs its own id (letters, digits, dashes, underscores; it never changes once albums are queued), a name, an inbox folder and a library folder, each a full path: a drive letter such as `D:\` or a network path such as `\\nas\music`.
 - Two lanes may not share an inbox, or albums would be filed in the wrong library.
 - An inbox may not be inside another lane's inbox: both lanes would see the same albums.
 - An inbox and a library folder may not be the same folder, or inside each other. Music already in the library would be picked up again as a new download. This is checked for a lane's own library and for every other lane's.
-- Folder names are compared without regard to capital letters, slash direction or a trailing slash, so `E:\Downloads\Music\` and `e:/downloads/music` count as the same folder.
+- Folder names are compared without regard to capital letters, slash direction or a trailing slash, so `D:\Music Inbox\` and `d:/music inbox` count as the same folder.
 - A lane cannot be removed while one of its albums is being checked or filed. Removing a lane never touches files.
 
 **The health check (preflight)** tries what Label Maker will really do, as the account Emby runs as, with small throw-away test files (their names start with a dot and they are deleted again):

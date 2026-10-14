@@ -306,18 +306,18 @@ namespace LabelMaker.Tests
         public void NoEventEverCarriesAFilePathOrShareName()
         {
             var agg = new EventAggregator(new AggregatorState());
-            var item = Item("a", QueueState.Failed, reason: @"Could not write E:\Downloads\Music\Green Day\x.mp3 or \\nas\kids-share\folder, sorry.");
+            var item = Item("a", QueueState.Failed, reason: @"Could not write D:\Spool\Rock\Green Day\x.mp3 or \\nas\jazz\folder, sorry.");
             item.RelativeFolder = @"Albums\Green Day\Insomniac";
             item.Album = string.Empty; item.Artist = string.Empty;
-            var input = Input(T0, item, Item("n", QueueState.NoMatch, reason: @"See \\nas\main-share\x"));
-            input.LaneProblems = new[] { new LaneProblemInfo { LaneId = "main", LaneName = "Main", Kind = LaneProblemKinds.InboxUnreachable, Message = @"Cannot reach D:\inbox\music." } };
+            var input = Input(T0, item, Item("n", QueueState.NoMatch, reason: @"See \\nas\rock\x"));
+            input.LaneProblems = new[] { new LaneProblemInfo { LaneId = "main", LaneName = "Main", Kind = LaneProblemKinds.InboxUnreachable, Message = @"Cannot reach F:\spool\music." } };
 
             var json = JsonSerializer.Serialize(agg.Evaluate(input).Select(e => e.Fields));
 
-            Assert.DoesNotContain(@"E:\\", json);
+            Assert.DoesNotContain(@"D:\\", json);
             Assert.DoesNotContain("nas", json);
-            Assert.DoesNotContain("D:\\\\", json);
-            Assert.DoesNotContain("Downloads", json);
+            Assert.DoesNotContain(@"F:\\", json);
+            Assert.DoesNotContain("Spool", json);
             Assert.Contains("(a folder)", json);
             Assert.Contains("Insomniac", json); // the album name alone is fine
         }
