@@ -1,6 +1,6 @@
 # Installing the Label Maker trial build
 
-This is a **trial build** (version 0.1.4.0; if you installed 0.1.1.0, update: its page did not open), not a release. It starts in **dry run**: it matches albums and shows what it would do, and moves or changes nothing by itself. Your own choices on the Albums tab are still carried out.
+This is a **trial build** (version 0.1.5.0; if you installed 0.1.1.0, update: its page did not open), not a release. It starts in **dry run**: it matches albums and shows what it would do, and moves or changes nothing by itself. Your own choices on the Albums tab are still carried out.
 
 ## 1. Install
 1. Close Emby, or leave it running and restart it at step 3.

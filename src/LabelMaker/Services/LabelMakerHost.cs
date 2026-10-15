@@ -102,6 +102,8 @@ internal static class LabelMakerHost
 	/// <summary>Sends an event to every connected administrator session. Fire and forget: a failure is logged and never reaches the engine.</summary>
 	private static void Push(NotificationEvent logged)
 	{
+		// The app's own subscription (LabelMakerEventsStart) gets it within about a second; Emby's web UI sessions get it by message.
+		EventsPushListener.NotifyChanged();
 		object? data = PlainJson.ToPlain(logged.Data);
 		Task.Run(async () =>
 		{

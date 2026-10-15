@@ -131,6 +131,37 @@ function ReadWs([int]$seconds) {
   }
   return $out
 }
+# ---- sockets that connect the way the Android app does: the token only in the X-Emby-Token header (and later inside the start message),
+# ---- the device id in the address, never ?api_key= (a test that used api_key would prove nothing about the app) -------------------------
+$script:appSockets = New-Object System.Collections.ArrayList
+function New-AppSocket([string]$token, [string]$device) {
+  $s = New-Object System.Net.WebSockets.ClientWebSocket
+  if ($token) { $s.Options.SetRequestHeader('X-Emby-Token', $token) }
+  $s.ConnectAsync([Uri]("ws://127.0.0.1:$Port/embywebsocket?deviceId=$device"), [Threading.CancellationToken]::None).Wait()
+  $sock = @{ Ws = $s; Pending = $null; Buf = (New-Object byte[] 262144) }
+  [void]$script:appSockets.Add($sock)
+  return $sock
+}
+function Send-App($sock, [string]$text) {
+  $b = [Text.Encoding]::UTF8.GetBytes($text)
+  $sock.Ws.SendAsync([ArraySegment[byte]]$b, [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).Wait()
+}
+# Reads for a while; returns the LabelMakerEvents messages (their Data objects) in the order they arrived.
+function Read-App($sock, [int]$seconds) {
+  $out = New-Object System.Collections.ArrayList
+  $end = (Get-Date).AddSeconds($seconds)
+  while ((Get-Date) -lt $end) {
+    if ($sock.Pending -eq $null) { $sock.Pending = $sock.Ws.ReceiveAsync([ArraySegment[byte]]$sock.Buf, [Threading.CancellationToken]::None) }
+    if ($sock.Pending.Wait(500)) {
+      $res = $sock.Pending.Result; $sock.Pending = $null
+      $text = [Text.Encoding]::UTF8.GetString($sock.Buf, 0, $res.Count)
+      try { $m = $text | ConvertFrom-Json; if ($m.MessageType -eq 'LabelMakerEvents') { [void]$out.Add($m.Data) } } catch {}
+    }
+  }
+  return $out
+}
+function Start-Message([string]$afterSeq, [string]$token) { '{"MessageType":"LabelMakerEventsStart","Data":"0,30000,' + $afterSeq + ',' + $token + '"}' }
+
 function Tag-Mp3([string]$path, [string]$title, [int]$track) {
   $f = [TagLib.File]::Create($path)
   $f.Tag.Title = $title; $f.Tag.Performers = @('Green Day'); $f.Tag.AlbumArtists = @('Green Day'); $f.Tag.Album = 'Insomniac'
@@ -197,6 +228,32 @@ try {
   $ws.ConnectAsync([Uri]("ws://127.0.0.1:$Port/embywebsocket?api_key=$($script:Token)&deviceId=lm-live-1"), [Threading.CancellationToken]::None).Wait()
   Check 'The websocket connected' ($ws.State -eq 'Open')
 
+  Write-Host '-- the events subscription, the way the app connects'
+  $app = New-AppSocket $script:Token 'lm-app-1'
+  Check 'The app-style socket connected (token in the header only)' ($app.Ws.State -eq 'Open')
+  Send-App $app (Start-Message '' $script:Token)
+  $baseline = @(Read-App $app 8)
+  Check 'Subscribing with an empty afterSeq answers with a baseline only (LatestSeq, no events)' (@($baseline).Count -ge 1 -and $baseline[0].ApiLevel -eq 1 -and $baseline[0].LatestSeq -ge 0 -and $baseline[0].Truncated -eq $false -and @($baseline[0].Events).Count -eq 0) (($baseline | ConvertTo-Json -Compress -Depth 4))
+  $script:baselineSeq = [long]$baseline[0].LatestSeq
+  # A signed-in user who is not an administrator, a token nobody has, and no token at all: each gets the error and nothing more.
+  $userPw = [Guid]::NewGuid().ToString('N') + 'Aa1!'
+  $plainUser = Api POST '/Users/New' @{ Name = 'lm-rig-user' }
+  Api POST "/Users/$($plainUser.Id)/Password" @{ NewPw = $userPw; CurrentPw = '' } | Out-Null
+  $userAuth = Api POST '/Users/AuthenticateByName' @{ Username = 'lm-rig-user'; Pw = $userPw } @{ 'X-Emby-Authorization' = 'MediaBrowser Client="lm-live", Device="probe", DeviceId="lm-live-user", Version="1"' }
+  $plainSocket = New-AppSocket $userAuth.AccessToken 'lm-live-user'
+  Send-App $plainSocket (Start-Message '' $userAuth.AccessToken)
+  $plainAnswer = @(Read-App $plainSocket 6)
+  Check 'A signed-in user who is not an administrator is refused' (@($plainAnswer).Count -eq 1 -and $plainAnswer[0].Error -eq 'Administrator login required.' -and -not $plainAnswer[0].Events) (($plainAnswer | ConvertTo-Json -Compress -Depth 3))
+  $junkToken = [Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N')
+  $junkSocket = New-AppSocket $script:Token 'lm-app-junk'
+  Send-App $junkSocket (Start-Message '' $junkToken)
+  $junkAnswer = @(Read-App $junkSocket 6)
+  Check 'A token nobody has is refused' (@($junkAnswer).Count -eq 1 -and $junkAnswer[0].Error -eq 'Administrator login required.') (($junkAnswer | ConvertTo-Json -Compress -Depth 3))
+  $noTokenSocket = New-AppSocket $script:Token 'lm-app-none'
+  Send-App $noTokenSocket '{"MessageType":"LabelMakerEventsStart","Data":"0,30000,"}'
+  $noTokenAnswer = @(Read-App $noTokenSocket 6)
+  Check 'A start message with no token is refused' (@($noTokenAnswer).Count -eq 1 -and $noTokenAnswer[0].Error -eq 'Administrator login required.') (($noTokenAnswer | ConvertTo-Json -Compress -Depth 3))
+
   Write-Host '-- a lane, a dry run, and the alerts'
   New-Item -ItemType Directory -Force $inbox, $library | Out-Null
   Save-Config (Lane-Obj) $true
@@ -213,6 +270,14 @@ try {
   $raw = ($msgs | ConvertTo-Json -Depth 8)
   Check 'No alert carries a folder path' (($raw -notmatch [regex]::Escape($tempRoot)) -and ($raw -notmatch 'lm-live-'))
   Check 'Dry run changed nothing in the library' ((Count-Of 'Done') -eq 0 -and (Count-Mp3 $library) -eq 0 -and (Count-Mp3 $inbox) -eq 2)
+
+  # What the app's subscription received while all that happened: promptly, in order, once each.
+  $appMessages = @(Read-App $app 3)
+  $appEvents = @($appMessages | ForEach-Object { @($_.Events) } | Where-Object { $_ })
+  $appSeqs = @($appEvents | ForEach-Object { [long]$_.Seq })
+  Check 'The subscription pushed the new alerts with the same shape as the catch-up route' (@($appEvents | Where-Object { $_.Name -eq 'LabelMaker.AutoApplied' -and $_.Data.Mode -eq 'WouldApply' -and $_.AtUtc -and $_.Data.Seq -eq $_.Seq }).Count -ge 1) (($appMessages | ConvertTo-Json -Compress -Depth 5))
+  Check 'Every pushed event is newer than the baseline, in order, and none came twice' ($appSeqs.Count -gt 0 -and @($appSeqs | Where-Object { $_ -le $script:baselineSeq }).Count -eq 0 -and ((@($appSeqs | Sort-Object -Unique).Count) -eq $appSeqs.Count) -and (($appSeqs -join ',') -eq ((@($appSeqs | Sort-Object)) -join ','))) ($appSeqs -join ',')
+  Check 'Each push reports the latest number' (@($appMessages | Where-Object { $_.LatestSeq -ge ($appSeqs | Measure-Object -Maximum).Maximum }).Count -ge 1)
 
   $ev = Api GET '/LabelMaker/Events?After=0&Limit=50'
   Check 'The catch-up log has the alerts in order' (@($ev.Events).Count -ge 2 -and ($ev.Events[0].Seq -lt $ev.Events[-1].Seq) -and $ev.LatestSeq -eq $ev.Events[-1].Seq)
@@ -273,6 +338,27 @@ try {
   Check 'An Applied alert was pushed' (@($m4 | Where-Object { $_.MessageType -eq 'LabelMaker.AutoApplied' -and $_.Data.Mode -eq 'Applied' }).Count -eq 1) (($m4 | ForEach-Object { $_.MessageType }) -join ',')
   Check 'The inbox was tidied' ((Count-Mp3 $inbox) -eq 0)
 
+  Write-Host '-- the subscription again: heartbeat, replay, and the token never leaks'
+  $heartbeats = New-Object System.Collections.ArrayList
+  [void]$heartbeats.AddRange(@(Read-App $app 38 | Where-Object { @($_.Events).Count -eq 0 -and -not $_.Error }))
+  Check 'A quiet subscription gets an empty heartbeat (within about 30 seconds)' ($heartbeats.Count -ge 1 -and $heartbeats[0].LatestSeq -ge 1) ($heartbeats.Count.ToString() + ' heartbeats')
+  $latest = (Api GET '/LabelMaker/Events').LatestSeq
+  $replay = New-AppSocket $script:Token 'lm-app-replay'
+  Send-App $replay (Start-Message '0' $script:Token)
+  $replayed = @(Read-App $replay 8)
+  $replaySeqs = @($replayed | ForEach-Object { @($_.Events) } | Where-Object { $_ } | ForEach-Object { [long]$_.Seq })
+  Check 'Subscribing with afterSeq 0 replays the log oldest first' ($replaySeqs.Count -ge 3 -and (($replaySeqs -join ',') -eq ((@($replaySeqs | Sort-Object)) -join ',')) -and $replayed[0].Truncated -eq $false -and $replayed[0].LatestSeq -eq $latest) ($replaySeqs -join ',')
+  $caught = New-AppSocket $script:Token 'lm-app-caught'
+  Send-App $caught (Start-Message ([string]$latest) $script:Token)
+  $caughtUp = @(Read-App $caught 8)
+  Check 'Subscribing with the latest number replays nothing' (@($caughtUp).Count -ge 1 -and @($caughtUp[0].Events).Count -eq 0 -and $caughtUp[0].LatestSeq -eq $latest)
+  # No token the test used may appear in anything the plugin or Emby wrote down.
+  $secrets = @($script:Token, $userAuth.AccessToken, $junkToken)
+  $written = @(Get-ChildItem $rigData -Recurse -Include *.txt, *.log, *.json, *.xml -File -ErrorAction SilentlyContinue)
+  $leaks = @()
+  foreach ($f in $written) { foreach ($secret in $secrets) { try { if ((Select-String -Path $f.FullName -Pattern $secret -SimpleMatch -Quiet -ErrorAction Stop)) { $leaks += $f.Name } } catch {} } }
+  Check 'No access token appears in any log or file the plugin or Emby wrote' ($leaks.Count -eq 0) (($leaks | Select-Object -Unique) -join ', ')
+
   Write-Host '-- alerts can be switched off'
   $cfg = Api GET "/Plugins/$pluginId/Configuration"; $cfg.SendPhoneAlerts = $false
   Api POST "/Plugins/$pluginId/Configuration" $cfg | Out-Null
@@ -286,6 +372,7 @@ catch {
 finally {
   Write-Host '-- cleanup'
   try { if ($ws) { $ws.Dispose() } } catch {}
+  foreach ($s in $script:appSockets) { try { $s.Ws.Dispose() } catch {} }
   if ($KeepRunning -and $script:rigProcessId -gt 0) {
     @{ Pid = $script:rigProcessId; Port = $Port; User = 'lm-rig-admin'; Password = $script:Password; Root = $tempRoot } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path ([IO.Path]::GetTempPath()) 'lm-live-instance.json')
     Write-Host ("  private instance left running on port $Port (user lm-rig-admin, password " + $script:Password + "); stop it with tools\Stop-LabelMakerTestInstance.ps1")

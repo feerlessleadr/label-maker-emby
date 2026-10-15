@@ -29,6 +29,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IServerEntr
 
 	public ISessionManager SessionManager { get; }
 
+	public IUserManager UserManager { get; }
+
 	public override string Name => "Label Maker";
 
 	public override string Description => "Tags and files downloaded music the way MusicBrainz Picard would, and asks you only when it is not sure.";
@@ -52,13 +54,14 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IServerEntr
 		return stream == null ? null : context.LoadFromStream(stream);
 	}
 
-	public Plugin(IApplicationPaths appPaths, IXmlSerializer xmlSerializer, ILibraryMonitor libraryMonitor, ISessionManager sessionManager, ILogManager logManager)
+	public Plugin(IApplicationPaths appPaths, IXmlSerializer xmlSerializer, ILibraryMonitor libraryMonitor, ISessionManager sessionManager, IUserManager userManager, ILogManager logManager)
 		: base(appPaths, xmlSerializer)
 	{
 		Instance = this;
 		AppPaths = appPaths;
 		LibraryMonitor = libraryMonitor;
 		SessionManager = sessionManager;
+		UserManager = userManager;
 		_logger = logManager.GetLogger("LabelMaker");
 	}
 

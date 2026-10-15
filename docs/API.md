@@ -14,6 +14,8 @@ Plugin 0.1.1.0, `ApiLevel` 1. Every route needs an **administrator** token (`X-E
 | `POST Pause` `{ Paused: bool }` | `{ Paused }` (saved in the plugin settings) |
 | `POST DryRun` `{ DryRun: bool }` | `{ DryRun }` (saved in the plugin settings) |
 
+The websocket subscription for phone alerts (`LabelMakerEventsStart` / `LabelMakerEvents`) is described in `docs/NOTIFICATIONS.md` section 12.
+
 Settings (lanes, thresholds, alert switches) are read and written with Emby's standard plugin settings route, `GET/POST /emby/Plugins/a29bf822-41ab-4e14-a814-a8d386e7f745/Configuration`; a saved value that breaks a rule is refused with `400` and a plain sentence as the body.
 
 ## Albums
