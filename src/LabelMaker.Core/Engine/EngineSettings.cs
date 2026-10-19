@@ -46,6 +46,9 @@ namespace LabelMaker.Core.Engine
         public int Id3Version { get; set; } = 4;
         public bool WriteId3v1 { get; set; } = true;
 
+        /// <summary>True (the default): after an album is filed and its library folder has no cover image, the release's front cover is downloaded from the Cover Art Archive.</summary>
+        public bool DownloadCoverArt { get; set; } = true;
+
         public NotificationSettings Notifications { get; set; } = new NotificationSettings();
 
         /// <summary>The account Label Maker runs as, named in preflight fixes. Empty leaves it out.</summary>
@@ -74,7 +77,7 @@ namespace LabelMaker.Core.Engine
         internal string BuildSignature() => JsonSerializer.Serialize(new
         {
             DryRun, StableSeconds, MaxPerPass, AutoThreshold, ReviewThreshold, MinFileScore, Margin, MaxReleaseGroups,
-            EditionsMustBeSameRecordings, PreferredCountries, NamingScript, Id3Version, WriteId3v1,
+            EditionsMustBeSameRecordings, PreferredCountries, NamingScript, Id3Version, WriteId3v1, DownloadCoverArt,
         });
 
         internal MatchSettings ToMatchSettings()

@@ -66,6 +66,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
 	public bool WriteId3v1 { get; set; } = true;
 
+	/// <summary>After an album is filed and its library folder has no cover image, download the release's front cover from the Cover Art Archive.</summary>
+	public bool DownloadCoverArt { get; set; } = true;
+
 	/// <summary>An email or web address added to the User-Agent sent to MusicBrainz, so they can reach you if something goes wrong. Optional.</summary>
 	public string MusicBrainzContact { get; set; } = string.Empty;
 
@@ -112,6 +115,7 @@ public class PluginConfiguration : BasePluginConfiguration
 			NamingScript = NamingScript ?? string.Empty,
 			Id3Version = Id3Version,
 			WriteId3v1 = WriteId3v1,
+			DownloadCoverArt = DownloadCoverArt,
 			AccountName = accountName,
 			Notifications = new NotificationSettings
 			{

@@ -211,3 +211,12 @@ A lane with any error is left alone until the problem is fixed, and the settings
 - **MusicBrainz id (MBID)**: the long code that identifies a release or recording. Written into tags so other tools recognize the music.
 - **Lane**: one inbox folder paired with one library folder.
 - **Dry run**: show what would happen, change nothing.
+
+## 8d. Cover art (built 2026-10-19, plugin 0.1.6.0 and later)
+Code: `CoverArt/CoverArtClient.cs`, `CoverArt/CoverArtFiller.cs`. Setting: **Settings > Naming and tags > Download cover art for albums that have none** (on by default; the page says what is sent).
+- **When.** Only right after an album has been filed (automatically, or by your choice on the Albums tab) and only when its library folder holds no `cover`, `folder` or `albumart` image (`.jpg`, `.jpeg`, `.png`). A cover that came with the download, or that the library already had, is never replaced, and nothing is asked of the Cover Art Archive in that case.
+- **What.** The front cover of the edition that was used, 500 pixels wide (the same size as the owner's Picard setting), saved as `cover.jpg` (or `cover.png`) next to the music, where Emby looks for it. The image must really be a JPEG or a PNG (judged by its first bytes) and at most 8 MB.
+- **What is not done.** The picture is not written into the files' tags (Picard's "embed cover art" is a different thing; the library keeps its files as they are). If the release has no front cover on the archive, or the archive cannot be reached, the album is filed all the same and no cover is added; Label Maker does not retry.
+- **Sent.** Only the album's MusicBrainz release id, to `coverartarchive.org`. No file names, no folder names.
+- **Undo.** Undoing an album also removes the cover Label Maker added for it (never one that was there before).
+- **The Albums tab** says "Cover art added." at the end of the album's sentence when it happened.

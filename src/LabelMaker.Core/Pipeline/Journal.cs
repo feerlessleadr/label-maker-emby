@@ -55,6 +55,9 @@ namespace LabelMaker.Core.Pipeline
 
         /// <summary>Small housekeeping files deleted from the inbox after the move (.albuminfo, a second cover), kept so Undo can bring them back.</summary>
         public List<HousekeepingBackup> Housekeeping { get; set; } = new List<HousekeepingBackup>();
+
+        /// <summary>The cover image Label Maker downloaded into the library folder after filing (empty when none); Undo removes it.</summary>
+        public string AddedCover { get; set; } = string.Empty;
     }
 
     /// <summary>One JSON file per album in a folder (the plugin's data folder). Writes are atomic: a crash never leaves half a journal.</summary>

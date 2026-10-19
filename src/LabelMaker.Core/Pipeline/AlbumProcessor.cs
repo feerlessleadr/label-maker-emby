@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using LabelMaker.Core.CoverArt;
 using LabelMaker.Core.Inbox;
 using LabelMaker.Core.Matching;
 using LabelMaker.Core.Models;
@@ -45,8 +46,12 @@ namespace LabelMaker.Core.Pipeline
         private readonly PlannerOptions _planner;
         private readonly TagWriteOptions _tagOptions;
 
-        public AlbumProcessor(IMusicBrainz musicBrainz, IFileOps ops, JournalStore journals, MatchSettings settings, PlannerOptions planner, TagWriteOptions tagOptions)
+        private readonly CoverArtFiller? _cover;
+
+        /// <param name="coverArt">When given, a filed album whose library folder has no cover gets the release's front cover from the Cover Art Archive.</param>
+        public AlbumProcessor(IMusicBrainz musicBrainz, IFileOps ops, JournalStore journals, MatchSettings settings, PlannerOptions planner, TagWriteOptions tagOptions, ICoverArt? coverArt = null)
         {
+            _cover = coverArt == null ? null : new CoverArtFiller(coverArt, ops, journals);
             _musicBrainz = musicBrainz;
             _ops = ops;
             _journals = journals;
@@ -157,7 +162,13 @@ namespace LabelMaker.Core.Pipeline
             // 5. Apply.
             stage?.Invoke(QueueState.Applying);
             var applied = new Applier(_ops, _journals, _tagOptions).Apply(plan, dryRun: false);
-            return FromApply(applied, summary, destination);
+            var outcome = FromApply(applied, summary, destination);
+            if (_cover != null && outcome.State == QueueState.Done)
+            {
+                var added = await _cover.AddIfMissingAsync(unit.Id, cancellation).ConfigureAwait(false);
+                if (added.Length > 0) outcome.Reason += " " + added;
+            }
+            return outcome;
         }
 
         /// <summary>Finishes an album whose earlier run was cut off in the middle of applying, from its journal.</summary>

@@ -191,6 +191,10 @@
                             <label><input is="emby-checkbox" type="checkbox" id="lmId3v1" /><span>Keep an ID3v1 tag on MP3 files</span></label>
                             <div class="fieldDescription">Picard writes one by default. Other tags in the files, such as lyrics, ratings and ReplayGain, are never touched.</div>
                         </div>
+                        <div class="checkboxContainer">
+                            <label><input is="emby-checkbox" type="checkbox" id="lmCover" /><span>Download cover art for albums that have none</span></label>
+                            <div class="fieldDescription">After an album is filed, if its library folder has no cover image, Label Maker asks the Cover Art Archive (coverartarchive.org) for the release's front cover and saves it as cover.jpg next to the music. Only the album's MusicBrainz id is sent. A cover that came with the download or is already in the library is never replaced, and Undo removes the one it added.</div>
+                        </div>
                     </div>
 
                     <div class="lm-card">

@@ -53,6 +53,7 @@ internal static class LabelMakerHost
 			DataFolder = dataFolder,
 			Settings = CurrentSettings,
 			MusicBrainz = client,
+			CoverArt = new LabelMaker.Core.CoverArt.CoverArtClient(new HttpClientHandler(), userAgent),
 			PluginVersion = version,
 			RefreshFolder = RefreshFolder,
 			OnEvent = Push,

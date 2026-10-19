@@ -169,6 +169,11 @@ namespace LabelMaker.Core.Pipeline
                     }
                 }
                 journal.Housekeeping.Clear();
+                if (journal.AddedCover.Length > 0)
+                {
+                    if (_ops.FileExists(journal.AddedCover)) _ops.DeleteFile(journal.AddedCover);
+                    journal.AddedCover = string.Empty;
+                }
                 RemoveEmptyLibraryFolders(journal);
 
                 journal.State = "Undone";

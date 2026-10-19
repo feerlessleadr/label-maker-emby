@@ -19,7 +19,7 @@ Install `LabelMaker.dll` from the latest GitHub release with the GitHub Repo Plu
 The release also carries `LabelMaker.dll.sha256` and a signed build attestation (`gh attestation verify LabelMaker.dll --repo feerlessleadr/label-maker-emby`).
 
 ## What leaves your server
-Only **artist, album and track names** (and counts) go to `musicbrainz.org`, one request a second, answers cached on disk. Nothing else is sent anywhere. Details: `SECURITY.md`.
+Only **artist, album and track names** (and counts) go to `musicbrainz.org`, one request a second, answers cached on disk. When an album has been filed and has no cover image, its MusicBrainz release id goes to `coverartarchive.org` to fetch the front cover (a switch on the settings page turns that off). Nothing else is sent anywhere. Details: `SECURITY.md`.
 
 ## Documents
 - `docs/MATCHING-RULES.md` every rule in plain English.

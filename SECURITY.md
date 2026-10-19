@@ -2,6 +2,7 @@
 
 ## What leaves your server
 - To **musicbrainz.org** (the public MusicBrainz web service): the **artist, album and track titles**, track counts and lengths of the albums being matched, plus the MusicBrainz ids already in your files. One request a second at most, with a User-Agent that names this project (and your contact address if you enter one in the settings, so MusicBrainz can reach you).
+- To **coverartarchive.org** (the Cover Art Archive, run by the same project), **only when an album has just been filed and its library folder has no cover image**: the album's MusicBrainz release id, to ask for its front cover (500 pixels wide). The switch is **Settings > Naming and tags > Download cover art for albums that have none**. Turn it off and nothing is sent there.
 - Nothing else. No audio, no file names, no folder or share names, no account or server details, no usage statistics. There is no other outside service.
 - **Phone alerts** go over Emby's own connection to administrator sessions only (Emby's websocket). They name albums by artist and album, never by folder path or share name.
 

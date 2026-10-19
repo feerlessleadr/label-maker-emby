@@ -20,6 +20,8 @@ namespace LabelMaker.Core.Engine
         public string DataFolder { get; set; } = string.Empty;
         public Func<EngineSettings> Settings { get; set; } = () => new EngineSettings();
         public IMusicBrainz MusicBrainz { get; set; } = null!;
+        /// <summary>The Cover Art Archive reader, or null to never download covers.</summary>
+        public LabelMaker.Core.CoverArt.ICoverArt? CoverArt { get; set; }
         public IFileOps Ops { get; set; } = new RealFileOps();
         public Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
         public string PluginVersion { get; set; } = "0.0.0.0";
@@ -440,12 +442,13 @@ namespace LabelMaker.Core.Engine
             var match = settings.ToMatchSettings();
             var planner = settings.ToPlannerOptions();
             var tags = settings.ToTagOptions();
-            var processor = new AlbumProcessor(_musicBrainz, _host.Ops, _journals, match, planner, tags);
+            var cover = settings.DownloadCoverArt ? _host.CoverArt : null;
+            var processor = new AlbumProcessor(_musicBrainz, _host.Ops, _journals, match, planner, tags, cover);
             _components = new Components
             {
                 Processor = processor,
                 Worker = new InboxWorker(() => _runnable, _host.Ops, _store, processor, settings.ToWorkerOptions(), _host.UtcNow),
-                Review = new ReviewService(_musicBrainz, _host.Ops, _journals, _store, () => _host.Settings().Lanes, match, planner, tags, _host.UtcNow),
+                Review = new ReviewService(_musicBrainz, _host.Ops, _journals, _store, () => _host.Settings().Lanes, match, planner, tags, _host.UtcNow, cover),
             };
             _componentsKey = key;
             return _components;

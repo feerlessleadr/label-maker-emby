@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using LabelMaker.Core.CoverArt;
 using LabelMaker.Core.Inbox;
 using LabelMaker.Core.Matching;
 using LabelMaker.Core.Models;
@@ -37,10 +38,12 @@ namespace LabelMaker.Core.Review
         private readonly PlannerOptions _planner;
         private readonly TagWriteOptions _tagOptions;
         private readonly Func<DateTime> _utcNow;
+        private readonly CoverArtFiller? _cover;
 
         public ReviewService(IMusicBrainz musicBrainz, IFileOps ops, JournalStore journals, QueueStore store, Func<IReadOnlyList<Lane>> lanes,
-            MatchSettings settings, PlannerOptions planner, TagWriteOptions tagOptions, Func<DateTime>? utcNow = null)
+            MatchSettings settings, PlannerOptions planner, TagWriteOptions tagOptions, Func<DateTime>? utcNow = null, ICoverArt? coverArt = null)
         {
+            _cover = coverArt == null ? null : new CoverArtFiller(coverArt, ops, journals);
             _musicBrainz = musicBrainz;
             _ops = ops;
             _journals = journals;
@@ -74,7 +77,18 @@ namespace LabelMaker.Core.Review
                 var message = planned.Preview.Problems.Count > 0 ? string.Join(" ", planned.Preview.Problems) : planned.Preview.Message;
                 return ReviewResult.Fail(message, open.Context!.Item.State);
             }
-            return ApplyPlan(open.Context!, planned.Plan, planned.Preview, "review");
+            var result = ApplyPlan(open.Context!, planned.Plan, planned.Preview, "review");
+            if (_cover != null && result.Success)
+            {
+                var added = await _cover.AddIfMissingAsync(open.Context!.Unit.Id, cancellation).ConfigureAwait(false);
+                if (added.Length > 0)
+                {
+                    result.Message += " " + added;
+                    open.Context!.Item.Reason = result.Message;
+                    Save(open.Context!.Item);
+                }
+            }
+            return result;
         }
 
         // ------------------------------------------------------------------ finding another edition

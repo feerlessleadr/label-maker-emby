@@ -491,6 +491,7 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
                 q('#lmScript').value = c.NamingScript || '';
                 q('#lmId3').value = String(c.Id3Version || 4);
                 q('#lmId3v1').checked = !!c.WriteId3v1;
+                q('#lmCover').checked = !!c.DownloadCoverArt;
                 q('#lmAlertMaster').checked = !!c.SendPhoneAlerts;
                 q('#lmAlertReview').checked = !!c.AlertNeedsReview;
                 q('#lmAlertFailed').checked = !!c.AlertAlbumFailed;
@@ -604,6 +605,7 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
             c.NamingScript = q('#lmScript').value;
             c.Id3Version = parseInt(q('#lmId3').value, 10);
             c.WriteId3v1 = q('#lmId3v1').checked;
+            c.DownloadCoverArt = q('#lmCover').checked;
             c.SendPhoneAlerts = q('#lmAlertMaster').checked;
             c.AlertNeedsReview = q('#lmAlertReview').checked;
             c.AlertAlbumFailed = q('#lmAlertFailed').checked;

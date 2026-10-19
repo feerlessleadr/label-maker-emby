@@ -29,7 +29,7 @@ Start with the main music lane only. Add the kids and shared lanes when the firs
 ## 4. Things to know
 - **MusicBrainz** is asked for artist, album and track names only, one request a second, and answers are remembered on disk. If it stops answering, albums wait and retry by themselves; the Dashboard says so.
 - **Phone alerts** are sent over Emby to the Embidextrous app (Settings > Phone alerts has the switches). The app side is not built yet, so nothing is shown on the phone for now.
-- **Not built yet:** cover art download, choices for an album that is already in the library (it is shown as *Already in library*), and spotting classical music or audiobooks. Such albums show up on the list for you to decide.
+- **Cover art:** after an album is filed and has no cover image, Label Maker downloads its front cover from the Cover Art Archive and saves it as `cover.jpg` (Settings > Naming and tags has a switch). **Not built yet:** choices for an album that is already in the library (it is shown as *Already in library*), and spotting classical music or audiobooks. Such albums show up on the list for you to decide.
 - **Naming** is Picard's stock script exactly; tags are written like your Picard (ID3v2.4, UTF-8, ID3v1 kept). Both are settings.
 
 ## 5. If something goes wrong
