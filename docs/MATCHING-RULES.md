@@ -165,7 +165,7 @@ Any change starts the 60 seconds again. After a restart of Emby every album also
 | Waiting | Seen, still downloading, or waiting its turn, or waiting to try again | Handled when it is finished and due |
 | Needs review | A likely match, but something was not certain enough | Waits for you; nothing is touched |
 | No match | Nothing on MusicBrainz fits | Stays in the inbox for you |
-| Ready | Dry run: it would have been applied | Nothing is touched; switch dry run off to apply |
+| Ready | Dry run: it would have been applied | Nothing is touched; switch dry run off and the next check (or **Check inbox now**) files it by itself, by the same rules as any new album |
 | Done | Tagged and moved into the library | Finished (it can be undone) |
 | Duplicate | A file with that name is already in the library | Nothing is written; you choose |
 | Failed | Something went wrong (a damaged file, the library folder not reachable) | Fix the cause; it is checked again when the folder changes |

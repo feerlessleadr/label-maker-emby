@@ -552,6 +552,31 @@ namespace LabelMaker.Tests
         }
 
         [Fact]
+        public async Task AnAlbumThatWasReadyInADryRunIsFiledOnceDryRunIsTurnedOff()
+        {
+            using var s = new InboxSandbox();
+            TwoInsomniacTracks(s);
+            var clock = new Clock();
+            var mb = Searchable();
+            var dry = NewWorker(s, mb, clock, dryRun: true);
+
+            await dry.RunPassAsync(CancellationToken.None);
+            clock.Now = Start.AddSeconds(61);
+            await dry.RunPassAsync(CancellationToken.None);
+            Assert.Equal(QueueState.Ready, new QueueStore(s.QueuePath).All().Single().State);
+
+            clock.Now = Start.AddSeconds(125);
+            var real = NewWorker(s, mb, clock, dryRun: false);
+            await real.RunPassAsync(CancellationToken.None); // a new worker watches the files for the stable time again
+            clock.Now = Start.AddSeconds(190);
+            var pass = await real.RunPassAsync(CancellationToken.None);
+
+            Assert.Equal(1, pass.Processed);
+            Assert.Equal(QueueState.Done, new QueueStore(s.QueuePath).All().Single().State);
+            Assert.True(File.Exists(Path.Combine(s.Library, "Green Day", "Insomniac", "1-02 Brat.mp3")));
+        }
+
+        [Fact]
         public async Task NewFilesInAFolderThatWasWaitingForReviewStartItOver()
         {
             using var s = new InboxSandbox();

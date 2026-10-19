@@ -23,7 +23,7 @@ Start with the main music lane only. Add the kids and shared lanes when the firs
 2. **Look at Ready albums.** Open one, press *Use the best match*, and read the preview: where each file would go and what it would be named. Nothing changes until you press *File the album with this edition*.
 3. **Work the Needs review list** with the buttons on the album: pick another edition, search by artist and album, paste a MusicBrainz link, say which track a file is, *Keep my tags and file it*, *Skip*, *Split by album* (a folder holding several albums), or *Discard* (to the inbox's `_Trash` folder; nothing is deleted).
 4. **Undo.** Any album you or Label Maker filed can be undone on the Albums tab (show *Filed*): files return to the inbox with their old tags and names.
-5. **When the Ready list looks right** for a few days, turn dry run off (Dashboard, or Settings > Checking). From then on albums that match with certainty are filed by themselves. For a lane you do not trust yet, tick **Always ask me first for this lane** in Settings > Lanes.
+5. **When the Ready list looks right** for a few days, turn dry run off (Dashboard, or Settings > Checking). From then on albums that match with certainty are filed by themselves, including albums already shown as *Ready (dry run)* (they are checked again on the next pass, about a minute later, or press **Check inbox now**; builds before 0.1.6.0 left them in Ready, so open the album and press the filing button, or update). For a lane you do not trust yet, tick **Always ask me first for this lane** in Settings > Lanes.
 6. Emby shows a newly filed album about 90 to 120 seconds later; that delay is Emby's, not Label Maker's.
 
 ## 4. Things to know

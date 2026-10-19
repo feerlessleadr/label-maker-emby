@@ -111,6 +111,16 @@ namespace LabelMaker.Core.Pipeline
                         Touch(item, now);
                     }
 
+                    // Dry run was turned off after this album was shown as Ready: check it again so it is filed by the same rules.
+                    if (!_options.DryRun && item.State == QueueState.Ready && !item.Held)
+                    {
+                        item.State = QueueState.Waiting;
+                        item.Reason = string.Empty;
+                        item.Attempts = 0;
+                        item.NextAttemptUtc = DateTime.MinValue;
+                        Touch(item, now);
+                    }
+
                     bool isFinished = _stability.IsFinished(unit, now, _options.StableFor, _ops);
                     if (item.State == QueueState.Waiting && isFinished && item.NextAttemptUtc <= now) finished.Add((item, unit, lane));
                     else if (item.State == QueueState.Waiting && !isFinished && string.IsNullOrEmpty(item.Reason))
