@@ -11,5 +11,5 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 // Never changes: Emby identifies the plugin by this id.
 [assembly: Guid("a29bf822-41ab-4e14-a814-a8d386e7f745")]
-[assembly: AssemblyFileVersion("0.1.6.0")]
-[assembly: AssemblyVersion("0.1.6.0")]
+[assembly: AssemblyFileVersion("0.1.7.0")]
+[assembly: AssemblyVersion("0.1.7.0")]
