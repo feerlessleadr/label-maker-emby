@@ -410,7 +410,7 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
             (p.Notes || []).forEach(x => box.appendChild(el('div', 'lm-note', x)));
             const policy = this.previewPolicy || '';
             if (p.DuplicateCount > 0) {
-                box.appendChild(el('div', 'lm-small', p.DuplicateCount + (p.DuplicateCount === 1 ? ' file has' : ' files have') + ' the same name as a file already in the library. Nothing is changed until you choose, and Undo works for both choices.'));
+                box.appendChild(el('div', 'lm-small', p.DuplicateCount + (p.DuplicateCount === 1 ? ' file has' : ' files have') + ' the same name as a file already in the library. Nothing is changed until you choose, and Undo works for every choice.'));
                 const choices = el('div', 'lm-row');
                 const both = el('button', 'raised emby-button' + (policy === 'KeepBoth' ? ' button-submit' : ''), 'Keep both (number the new copies)'); both.type = 'button';
                 both.addEventListener('click', () => this.preview(this.previewRelease, this.currentMapping(), 'KeepBoth'));
