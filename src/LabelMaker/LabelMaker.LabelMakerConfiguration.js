@@ -417,6 +417,12 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
                 const replace = el('button', 'raised emby-button' + (policy === 'Replace' ? ' button-submit' : ''), 'Replace the old files (they are kept aside)'); replace.type = 'button';
                 replace.addEventListener('click', () => this.preview(this.previewRelease, this.currentMapping(), 'Replace'));
                 choices.appendChild(both); choices.appendChild(replace);
+                if (p.DuplicateCount < (p.Files || []).length) {
+                    // Some files are new: file only those and set the others aside.
+                    const skip = el('button', 'raised emby-button' + (policy === 'SkipExisting' ? ' button-submit' : ''), 'File only the new files (set the others aside)'); skip.type = 'button';
+                    skip.addEventListener('click', () => this.preview(this.previewRelease, this.currentMapping(), 'SkipExisting'));
+                    choices.appendChild(skip);
+                }
                 box.appendChild(choices);
             }
             const t = el('table', 'lm-table');
@@ -432,7 +438,7 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
                 const d1 = el('td'); d1.appendChild(disc); r.appendChild(d1);
                 const d2 = el('td'); d2.appendChild(pos); r.appendChild(d2);
                 r.appendChild(el('td', '', f.Title));
-                r.appendChild(el('td', 'lm-small', f.Destination));
+                r.appendChild(el('td', 'lm-small', f.SetAside ? 'Not filed: set aside' : f.Destination));
                 const fit = el('td'); fit.appendChild(f.Weak ? pill('Warning', 'Does not fit') : el('span', 'lm-good', f.Score.toFixed(2))); r.appendChild(fit);
                 r.appendChild(el('td', 'lm-small', f.Existing ? 'Yes: the library copy is ' + formatBytes(f.ExistingBytes) + ', yours is ' + formatBytes(f.NewBytes) + '.' : ''));
                 t.appendChild(r);
@@ -443,7 +449,10 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
             const row = el('div', 'lm-row');
             const update = el('button', 'raised emby-button', 'Update the preview'); update.type = 'button';
             update.addEventListener('click', () => this.preview(this.previewRelease, this.currentMapping(), policy));
-            const applyLabel = policy === 'KeepBoth' ? 'File the album and keep both copies' : policy === 'Replace' ? 'File the album and replace the old files' : 'File the album with this edition';
+            const applyLabel = policy === 'KeepBoth' ? 'File the album and keep both copies'
+                : policy === 'Replace' ? 'File the album and replace the old files'
+                    : policy === 'SkipExisting' ? 'File only the new files'
+                        : 'File the album with this edition';
             const apply = el('button', 'raised emby-button button-submit', applyLabel); apply.type = 'button';
             apply.disabled = !p.CanApply;
             apply.addEventListener('click', () => {
@@ -451,7 +460,9 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
                     ? 'Tag the files, move them into your library and replace the files that are already there? The old files are saved in the _Replaced folder of the inbox, and Undo puts them back.'
                     : policy === 'KeepBoth'
                         ? 'Tag the files and move them into your library, keeping the files that are already there? The new copies get a number after their names. You can undo it afterwards.'
-                        : 'Tag the files with this edition and move them into your library? You can undo it afterwards.';
+                        : policy === 'SkipExisting'
+                            ? 'File only the new files? The files the library already has are set aside in the _Duplicates folder of the inbox (nothing is deleted), and Undo puts everything back.'
+                            : 'Tag the files with this edition and move them into your library? You can undo it afterwards.';
                 if (!window.confirm(question)) { return; }
                 this.apply(this.previewRelease, this.currentMapping(), policy);
             });

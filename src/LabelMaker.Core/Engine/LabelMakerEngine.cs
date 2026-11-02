@@ -386,7 +386,8 @@ namespace LabelMaker.Core.Engine
             if (string.IsNullOrWhiteSpace(text)) return DuplicatePolicy.Refuse;
             if (string.Equals(text.Trim(), "KeepBoth", StringComparison.OrdinalIgnoreCase)) return DuplicatePolicy.KeepBoth;
             if (string.Equals(text.Trim(), "Replace", StringComparison.OrdinalIgnoreCase)) return DuplicatePolicy.Replace;
-            throw new ArgumentException("OnDuplicate must be empty, \"KeepBoth\" or \"Replace\".");
+            if (string.Equals(text.Trim(), "SkipExisting", StringComparison.OrdinalIgnoreCase)) return DuplicatePolicy.SkipExisting;
+            throw new ArgumentException("OnDuplicate must be empty, \"KeepBoth\", \"Replace\" or \"SkipExisting\".");
         }
 
         public Task<ReviewPreview> PreviewAsync(string id, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken ct = default, DuplicatePolicy onDuplicate = DuplicatePolicy.Refuse) =>

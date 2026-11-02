@@ -110,7 +110,7 @@ The plain sentences you will see, and what each means:
 | "1 file(s) could not be read (name). Fix or remove them and the album is checked again." | A file is damaged or is not music. | Replace or delete that file. |
 | "These files have no album name, and their song titles led nowhere either." | The tags have no album, and searching MusicBrainz for the song titles found no album either (section 8g). | Type the album name in the review screen's search, or paste a MusicBrainz link. |
 | "Found by searching for the song titles, because the album name in the tags led nowhere, so please check it." | The album name did not lead to a fitting album, so Label Maker searched MusicBrainz for a few of the song titles (section 8g). It is never applied without you. | Look at the suggestion on the review screen and approve it, pick another edition, or search by hand. |
-| "... is already in the library." | A file with the same name is already there. | Open the album, press **See what is already in the library**, then choose **Keep both** (the new copy gets a number, section 8e) or **Replace the old files** (the old ones are kept aside; section 8e), or discard the new one. |
+| "... is already in the library." | A file with the same name is already there. | Open the album, press **See what is already in the library**, then choose **Keep both** (the new copy gets a number, section 8e) **Replace the old files** (the old ones are kept aside; section 8e), **File only the new files** when some are new (section 8h), or discard the new one. |
 | "The path ... is N characters long." | The new file path would be too long for Windows. | Shorten a name or accept a shorter naming pattern. |
 | "MusicBrainz could not be reached" / "stayed busy" | Not a match problem: the service is down or busy. | Nothing. The album is retried automatically and never counted as "no match". |
 
@@ -244,3 +244,11 @@ Code: `Matching/TrackTitleSearch.cs`, the last step of `Matching/AlbumMatcher.cs
 - **Cost.** At most 3 song searches plus the checks of up to 5 albums, at MusicBrainz's one request a second, and every answer is remembered on disk like the others. It runs only for albums that would otherwise have been "No match".
 - **By hand.** The review screen's **Search** button does the same when the album you typed fits nothing: it adds the albums found by song titles and says so.
 - **Privacy.** The song titles and the artist name (already sent in the album searches) go to MusicBrainz; nothing else.
+
+## 8h. Partly overlapping albums: file only the new files (built 2026-11-02)
+Code: `DuplicatePolicy.SkipExisting` in `Pipeline/Planner.cs`, `SetAsideDuplicates` and `RestoreSetAside` in `Pipeline/Applier.cs`.
+- **When it helps.** MusicGrabber delivers an album track by track, so a download can hold tracks 2 to 4 while the library already has tracks 1 to 3. By default the whole album then waits as *Already in library* (section 8e). A third choice, **File only the new files (set the others aside)**, appears in the preview whenever at least one file is new.
+- **What it does.** The files that already have a file of that name in the library are **not filed and not tagged**. They are moved into the inbox, in `_Duplicates/<album id>/` with the same folders as in the inbox (a lyrics file goes with its track), so the album folder can be tidied away. Nothing is deleted, and Label Maker never looks inside `_Duplicates` (a folder whose name starts with an underscore is ignored, like `_Trash`). The other files are filed exactly as for any album, with the same safety checks.
+- **Undo.** Puts the filed files back in the inbox with their old tags, moves the set-aside files back to where they were, and removes the empty `_Duplicates` folders. The library copies that were already there are never touched.
+- **If every file is already in the library** there is nothing new to file: the choice is not offered, and the preview says so. Use *Discard* if you do not need the files.
+- **A crash in the middle** is finished from the album's record on the next check.

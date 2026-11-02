@@ -573,6 +573,7 @@ namespace LabelMaker.Core.Review
             foreach (var a in verification.Assignments)
             {
                 var planned = plan.Files.FirstOrDefault(p => string.Equals(p.Source, a.File.Path, StringComparison.OrdinalIgnoreCase));
+                var aside = plan.SetAside.FirstOrDefault(p => string.Equals(p.Source, a.File.Path, StringComparison.OrdinalIgnoreCase));
                 preview.Files.Add(new PreviewFile
                 {
                     Source = Path.GetRelativePath(c.Unit.Folder, a.File.Path),
@@ -582,9 +583,10 @@ namespace LabelMaker.Core.Review
                     Title = a.Track?.Title ?? string.Empty,
                     Score = Math.Round(a.Score, 3),
                     Weak = a.Track == null || (a.Score < _settings.MinFileScore && !placedByPerson.Contains(a.File.Path)),
-                    Existing = planned != null && planned.ExistingBytes > 0,
-                    ExistingBytes = planned?.ExistingBytes ?? 0,
+                    Existing = (planned != null && planned.ExistingBytes > 0) || aside != null,
+                    ExistingBytes = planned?.ExistingBytes ?? aside?.ExistingBytes ?? 0,
                     NewBytes = SizeOf(a.File.Path),
+                    SetAside = aside != null,
                 });
             }
             preview.Problems.AddRange(plan.Problems);

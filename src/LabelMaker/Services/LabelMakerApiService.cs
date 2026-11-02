@@ -107,7 +107,7 @@ public class LmPreviewAlbumRequest : IReturn<object>
 
 	public MappingDto[] Mapping { get; set; }
 
-	/// <summary>Empty (the default: nothing is written when a file of that name is already in the library), "KeepBoth" (the new file gets a number after its name) or "Replace" (the old file is saved in the inbox's _Replaced folder first).</summary>
+	/// <summary>Empty (the default: nothing is written when a file of that name is already in the library), "KeepBoth" (the new file gets a number after its name) "Replace" (the old file is saved in the inbox's _Replaced folder first) or "SkipExisting" (only the new files are filed; the others are set aside in the inbox's _Duplicates folder).</summary>
 	public string OnDuplicate { get; set; }
 }
 
@@ -121,7 +121,7 @@ public class LmApplyAlbumRequest : IReturn<object>
 
 	public MappingDto[] Mapping { get; set; }
 
-	/// <summary>Empty (the default: nothing is written when a file of that name is already in the library), "KeepBoth" (the new file gets a number after its name) or "Replace" (the old file is saved in the inbox's _Replaced folder first).</summary>
+	/// <summary>Empty (the default: nothing is written when a file of that name is already in the library), "KeepBoth" (the new file gets a number after its name) "Replace" (the old file is saved in the inbox's _Replaced folder first) or "SkipExisting" (only the new files are filed; the others are set aside in the inbox's _Duplicates folder).</summary>
 	public string OnDuplicate { get; set; }
 }
 

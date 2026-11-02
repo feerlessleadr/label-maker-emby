@@ -20,6 +20,9 @@ namespace LabelMaker.Core.Pipeline
 
         /// <summary>The old file is saved in the inbox's _Replaced folder and the new file takes its place; Undo puts the old one back.</summary>
         Replace,
+
+        /// <summary>The files that are already in the library are set aside in the inbox's _Duplicates folder; only the new ones are filed.</summary>
+        SkipExisting,
     }
 
     public sealed class PlannerOptions
@@ -79,6 +82,18 @@ namespace LabelMaker.Core.Pipeline
         public long ExistingBytes { get; set; }
     }
 
+    /// <summary>A file that is not filed because the library already has it (the "skip the files already there" choice): it is set aside in the inbox instead.</summary>
+    public sealed class PlannedSetAside
+    {
+        public string Source { get; set; } = string.Empty;
+
+        /// <summary>Lyric files that belong to it and go with it.</summary>
+        public List<string> SidecarSources { get; } = new List<string>();
+
+        /// <summary>The size of the file that is already in the library.</summary>
+        public long ExistingBytes { get; set; }
+    }
+
     /// <summary>Everything that would be done for one album, worked out without touching a file.</summary>
     public sealed class AlbumPlan
     {
@@ -98,6 +113,9 @@ namespace LabelMaker.Core.Pipeline
 
         /// <summary>How many files already had a file of the planned name in the library (whatever the policy did about it).</summary>
         public int DuplicateCount { get; set; }
+
+        /// <summary>Files left out of this filing because the library already has them (empty unless the person chose to skip them).</summary>
+        public List<PlannedSetAside> SetAside { get; } = new List<PlannedSetAside>();
 
         /// <summary>Plain sentences about what a duplicate choice does (shown on the preview; not problems).</summary>
         public List<string> Notes { get; } = new List<string>();
@@ -275,10 +293,26 @@ namespace LabelMaker.Core.Pipeline
                         }
                         break;
 
+                    case DuplicatePolicy.SkipExisting:
+                        var aside = new PlannedSetAside { Source = file.Source, ExistingBytes = file.ExistingBytes };
+                        foreach (var sidecar in file.Sidecars) aside.SidecarSources.Add(sidecar.Source);
+                        plan.SetAside.Add(aside);
+                        plan.Notes.Add($"\"{name}\" is already in the library, so your copy is set aside in the inbox's _Duplicates folder and not filed; Undo puts it back.");
+                        break;
+
                     default:
                         plan.IsDuplicate = true;
                         plan.Problems.Add($"\"{name}\" is already in the library.");
                         break;
+                }
+            }
+
+            if (plan.SetAside.Count > 0)
+            {
+                plan.Files.RemoveAll(f => plan.SetAside.Any(a => string.Equals(a.Source, f.Source, StringComparison.OrdinalIgnoreCase)));
+                if (plan.Files.Count == 0 && plan.Problems.Count == 0)
+                {
+                    plan.Problems.Add("Every file of this album is already in the library, so there is nothing new to file. Discard the album if you do not need these files.");
                 }
             }
         }

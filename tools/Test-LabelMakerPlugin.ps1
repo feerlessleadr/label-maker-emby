@@ -358,9 +358,19 @@ try {
   Check 'Replace files the new files in place and saves the old ones aside' ($a2.Success -and (Count-Mp3 $library) -eq 2 -and (Count-Mp3 (Join-Path $inbox '_Replaced')) -eq 2) ([string]$a2.Message)
   $u2 = Api POST "/LabelMaker/Albums/$($dup.Id)/Undo"
   Check 'Undo puts the old files back and removes the _Replaced folder' ($u2.Success -and (Count-Mp3 $library) -eq 2 -and (Count-Mp3 $inbox) -eq 2 -and -not (Test-Path (Join-Path $inbox '_Replaced'))) ([string]$u2.Message)
+  # Only one of the two files is already in the library: file the new one and set the other aside.
+  $lib86 = @(Get-ChildItem $library -Recurse -Filter '*86*.mp3')[0]
+  [IO.File]::Delete($lib86.FullName)
+  $p3 = Api POST "/LabelMaker/Albums/$($dup.Id)/Preview" @{ ReleaseId = $dup.BestReleaseId; OnDuplicate = 'SkipExisting' }
+  Check 'The skip preview sets the file the library has aside and files the other' ($p3.CanApply -and $p3.DuplicateCount -eq 1 -and @($p3.Files | Where-Object { $_.SetAside }).Count -eq 1 -and @($p3.Notes).Count -eq 1) ($p3 | ConvertTo-Json -Compress -Depth 3)
+  $a3 = Api POST "/LabelMaker/Albums/$($dup.Id)/Apply" @{ ReleaseId = $dup.BestReleaseId; OnDuplicate = 'SkipExisting' }
+  Check 'Skipping files only the new file and sets the old one aside in _Duplicates' ($a3.Success -and (Count-Mp3 $library) -eq 2 -and (Count-Mp3 (Join-Path $inbox '_Duplicates')) -eq 1) ([string]$a3.Message)
+  $u3 = Api POST "/LabelMaker/Albums/$($dup.Id)/Undo"
+  Check 'Undo puts the set-aside file back and removes the _Duplicates folder' ($u3.Success -and (Count-Mp3 $library) -eq 1 -and (Count-Mp3 $inbox) -eq 2 -and -not (Test-Path (Join-Path $inbox '_Duplicates'))) ([string]$u3.Message)
   $null = Api POST "/LabelMaker/Albums/$($dup.Id)/Discard"
 
   Write-Host '-- an album name that leads nowhere: the song titles are searched'
+  $libraryBefore = Count-Mp3 $library
   $mystery = Join-Path $inbox 'Albums\Green Day\Mystery Download'
   New-Item -ItemType Directory -Force $mystery | Out-Null
   $fixture = Join-Path $repo 'tests\LabelMaker.Tests\Fixtures\silence.mp3'
@@ -383,7 +393,7 @@ try {
   if (-not $okMystery -and $busyAll) {
     Write-Host '  skip The song-title checks: MusicBrainz stayed busy in all three tries (not counted as a pass or a failure)'
   } else {
-    Check 'An album called Unknown Album is found by its song titles and goes to review, not to the library' ($okMystery -and $m[0].Reason -match 'Found by searching for the song titles' -and (Count-Mp3 $library) -eq 2) (($m | ConvertTo-Json -Compress -Depth 3))
+    Check 'An album called Unknown Album is found by its song titles and goes to review, not to the library' ($okMystery -and $m[0].Reason -match 'Found by searching for the song titles' -and (Count-Mp3 $library) -eq $libraryBefore) (($m | ConvertTo-Json -Compress -Depth 3))
     Check 'Its best match is the album the songs are on' ($okMystery -and $m[0].BestTitle -eq 'Insomniac') ([string]$m[0].BestTitle)
   }
   if ($okMystery) { $null = Api POST "/LabelMaker/Albums/$($m[0].Id)/Discard" }

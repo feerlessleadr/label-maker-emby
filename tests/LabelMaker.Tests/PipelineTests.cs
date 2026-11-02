@@ -435,6 +435,95 @@ namespace LabelMaker.Tests
             Assert.DoesNotContain(RelativeFiles(s.Root), f => f.EndsWith(SafeMover.TempSuffix));
         }
 
+        // ---- skipping the files the library already has ------------------------------------------------------
+
+        private static string SetAsideFolder(Scratch s) => Path.Combine(s.Inbox, "_Duplicates", "album-1", "Albums", "Green Day", "Insomniac");
+
+        [Fact]
+        public void SkipExistingFilesOnlyTheNewFilesAndSetsTheOthersAside()
+        {
+            using var s = ThreeTrackAlbum();
+            Directory.CreateDirectory(LibraryAlbum(s));
+            File.WriteAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3"), "old 86");
+
+            var plan = MakePlan(s, options: Policy(DuplicatePolicy.SkipExisting));
+
+            Assert.True(plan.CanApply, string.Join(" ", plan.Problems));
+            Assert.False(plan.IsDuplicate);
+            Assert.Equal(2, plan.Files.Count);
+            Assert.Equal("01-07 - 86.mp3", Path.GetFileName(Assert.Single(plan.SetAside).Source));
+            Assert.Single(plan.Notes);
+
+            var applied = NewApplier(s).Apply(plan, dryRun: false);
+
+            Assert.Equal(ApplyState.Applied, applied.State);
+            Assert.Equal("old 86", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3")));
+            Assert.True(File.Exists(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.mp3")));
+            Assert.True(File.Exists(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.lrc")));
+            Assert.True(File.Exists(Path.Combine(SetAsideFolder(s), "01-07 - 86.mp3")));
+            Assert.Empty(Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories).Where(f => !f.Contains("_Duplicates")));
+            Assert.False(Directory.Exists(s.AlbumFolder)); // nothing is left in the album folder, so it was tidied away
+        }
+
+        [Fact]
+        public void SkipExistingUndoPutsEverythingBackAndLeavesTheLibraryCopyAlone()
+        {
+            using var s = ThreeTrackAlbum();
+            Directory.CreateDirectory(LibraryAlbum(s));
+            File.WriteAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3"), "old 86");
+            var applier = NewApplier(s);
+            Assert.Equal(ApplyState.Applied, applier.Apply(MakePlan(s, options: Policy(DuplicatePolicy.SkipExisting)), dryRun: false).State);
+
+            var undone = applier.Undo("album-1");
+
+            Assert.True(undone.Success, undone.Message);
+            Assert.Equal(3, Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories).Count());
+            Assert.True(File.Exists(Path.Combine(s.AlbumFolder, "01-07 - 86.mp3")));
+            Assert.False(Directory.Exists(Path.Combine(s.Inbox, "_Duplicates")));
+            Assert.Equal("old 86", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3")));
+            Assert.Equal(new[] { "1-07 86.mp3" }, Directory.EnumerateFiles(s.Library, "*", SearchOption.AllDirectories).Select(Path.GetFileName).ToArray());
+        }
+
+        [Fact]
+        public void SkipExistingWhenEveryFileIsAlreadyThereHasNothingToFile()
+        {
+            using var s = ThreeTrackAlbum();
+            Directory.CreateDirectory(LibraryAlbum(s));
+            foreach (var name in new[] { "1-01 Armatage Shanks.mp3", "2-01 Armatage Shanks.mp3", "1-07 86.mp3" }) File.WriteAllText(Path.Combine(LibraryAlbum(s), name), "old");
+
+            var plan = MakePlan(s, options: Policy(DuplicatePolicy.SkipExisting));
+
+            Assert.False(plan.CanApply);
+            Assert.Contains("nothing new to file", string.Join(" ", plan.Problems));
+        }
+
+        [Theory]
+        [InlineData(1)]
+        [InlineData(3)]
+        [InlineData(5)]
+        [InlineData(7)]
+        public void ASkipCutOffInTheMiddleLosesNothingAndFinishesOnTheNextRun(int failOnCall)
+        {
+            using var s = ThreeTrackAlbum();
+            Directory.CreateDirectory(LibraryAlbum(s));
+            File.WriteAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3"), "old 86");
+            var ops = new FaultyOps("move", failOnCall);
+            var applier = NewApplier(s, ops);
+
+            var first = applier.Apply(MakePlan(s, options: Policy(DuplicatePolicy.SkipExisting)), dryRun: false);
+            if (first.State != ApplyState.Applied)
+            {
+                Assert.Equal(ApplyState.Failed, first.State);
+                ops.Armed = false;
+                Assert.Equal(ApplyState.Applied, applier.Apply(MakePlan(s, options: Policy(DuplicatePolicy.SkipExisting)), dryRun: false).State);
+            }
+
+            Assert.Equal("old 86", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3")));
+            Assert.True(File.Exists(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.mp3")));
+            Assert.True(File.Exists(Path.Combine(SetAsideFolder(s), "01-07 - 86.mp3")));
+            Assert.Empty(Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories).Where(f => !f.Contains("_Duplicates")));
+        }
+
         // ---- undo --------------------------------------------------------------------------------------------
 
         [Theory]

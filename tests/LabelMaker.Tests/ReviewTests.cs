@@ -183,8 +183,40 @@ namespace LabelMaker.Tests
         }
 
         [Fact]
+        public async Task SkipExistingFilesTheNewTrackAndSetsTheDuplicateAside()
+        {
+            using var s = new InboxSandbox();
+            TwoTracks(s);
+            var old = OldBratInTheLibrary(s);
+            var store = new QueueStore(s.QueuePath);
+            var item = Enqueue(s, store);
+            var service = Service(s, store, Searchable());
+
+            var preview = await service.PreviewAsync(item.Id, Insomniac().Id, null, default, DuplicatePolicy.SkipExisting);
+            Assert.True(preview.CanApply, string.Join(" ", preview.Problems));
+            var brat = Assert.Single(preview.Files, f => f.SetAside);
+            Assert.True(brat.Existing);
+            Assert.Equal(8, brat.ExistingBytes);
+            Assert.Equal(string.Empty, brat.Destination);
+            Assert.Single(preview.Notes);
+
+            var result = await service.ApplyAsync(item.Id, Insomniac().Id, null, default, DuplicatePolicy.SkipExisting);
+
+            Assert.True(result.Success, result.Message);
+            Assert.Equal("old brat", File.ReadAllText(old));
+            Assert.Equal(2, LibraryAudio(s).Count); // the old Brat and the new 86
+            Assert.True(File.Exists(Path.Combine(s.Inbox, "_Duplicates", item.Id, "Albums", "Green Day", "Insomniac", "02 - Brat.mp3")));
+
+            Assert.True(service.Undo(item.Id).Success);
+            Assert.Equal(2, InboxAudio(s).Count);
+            Assert.Equal("old brat", File.ReadAllText(old));
+            Assert.False(Directory.Exists(Path.Combine(s.Inbox, "_Duplicates")));
+        }
+
+        [Fact]
         public void AnUnknownDuplicateChoiceIsRefusedByName()
         {
+            Assert.Equal(DuplicatePolicy.SkipExisting, LabelMaker.Core.Engine.LabelMakerEngine.PolicyFrom("skipexisting"));
             Assert.Equal(DuplicatePolicy.Refuse, LabelMaker.Core.Engine.LabelMakerEngine.PolicyFrom(null));
             Assert.Equal(DuplicatePolicy.KeepBoth, LabelMaker.Core.Engine.LabelMakerEngine.PolicyFrom("keepboth"));
             Assert.Equal(DuplicatePolicy.Replace, LabelMaker.Core.Engine.LabelMakerEngine.PolicyFrom(" Replace "));

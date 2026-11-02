@@ -27,6 +27,18 @@ namespace LabelMaker.Core.Pipeline
         public bool Done { get; set; }
     }
 
+    /// <summary>A file the "skip the files already there" choice left out of the filing and moved aside in the inbox, so Undo can put it back.</summary>
+    public sealed class SetAsideFile
+    {
+        /// <summary>Where it was in the inbox (and where Undo puts it back).</summary>
+        public string Source { get; set; } = string.Empty;
+
+        /// <summary>Where it waits: under the inbox's _Duplicates folder.</summary>
+        public string Target { get; set; } = string.Empty;
+
+        public bool Done { get; set; }
+    }
+
     public sealed class HousekeepingBackup
     {
         public string Path { get; set; } = string.Empty;
@@ -77,6 +89,9 @@ namespace LabelMaker.Core.Pipeline
 
         /// <summary>Old library files saved aside by the "replace" choice (empty otherwise).</summary>
         public List<ReplacedFile> Replaced { get; set; } = new List<ReplacedFile>();
+
+        /// <summary>Files left out of the filing because the library already had them (empty otherwise).</summary>
+        public List<SetAsideFile> SetAside { get; set; } = new List<SetAsideFile>();
 
         /// <summary>The cover image Label Maker downloaded into the library folder after filing (empty when none); Undo removes it.</summary>
         public string AddedCover { get; set; } = string.Empty;

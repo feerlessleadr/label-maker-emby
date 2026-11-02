@@ -46,6 +46,9 @@ namespace LabelMaker.Core.Review
 
         /// <summary>The size in bytes of the file in the inbox.</summary>
         public long NewBytes { get; set; }
+
+        /// <summary>The file would be set aside (not filed) because the library already has it: the "skip the files already there" choice.</summary>
+        public bool SetAside { get; set; }
     }
 
     /// <summary>What would happen if one edition were used for an album: shown before anything is changed.</summary>

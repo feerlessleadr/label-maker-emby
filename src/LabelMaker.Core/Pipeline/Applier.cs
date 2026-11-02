@@ -131,6 +131,9 @@ namespace LabelMaker.Core.Pipeline
                 }
                 foreach (var sidecar in journal.AlbumSidecars) MoveSidecar(sidecar, journal);
 
+                // Phase 3: files the library already had are set aside, so the album folder can be tidied away.
+                SetAsideDuplicates(journal);
+
                 TidyInbox(journal);
                 journal.State = "Applied";
                 _journals.Save(journal);
@@ -189,6 +192,7 @@ namespace LabelMaker.Core.Pipeline
                     }
                 }
                 journal.Housekeeping.Clear();
+                RestoreSetAside(journal);
                 RestoreReplaced(journal);
                 if (journal.AddedCover.Length > 0)
                 {
@@ -237,6 +241,12 @@ namespace LabelMaker.Core.Pipeline
             }
             foreach (var s in plan.AlbumSidecars) journal.AlbumSidecars.Add(new JournalSidecar { Source = s.Source, Destination = s.Destination });
 
+            foreach (var aside in plan.SetAside)
+            {
+                journal.SetAside.Add(new SetAsideFile { Source = aside.Source, Target = SetAsidePathFor(plan, aside.Source) });
+                foreach (var sidecar in aside.SidecarSources) journal.SetAside.Add(new SetAsideFile { Source = sidecar, Target = SetAsidePathFor(plan, sidecar) });
+            }
+
             foreach (var f in plan.Files)
             {
                 if (f.ReplacesExisting) journal.Replaced.Add(new ReplacedFile { Destination = f.Destination, BackupPath = BackupPathFor(plan, f.Destination) });
@@ -246,6 +256,53 @@ namespace LabelMaker.Core.Pipeline
                 }
             }
             return journal;
+        }
+
+        /// <summary>Files the library already had wait under the inbox in _Duplicates/&lt;album id&gt;/, keeping their inbox-relative path.</summary>
+        private static string SetAsidePathFor(AlbumPlan plan, string source) =>
+            Path.Combine(plan.InboxRoot, "_Duplicates", plan.AlbumId, Path.GetRelativePath(plan.InboxRoot, source));
+
+        /// <summary>Moves the files the library already had out of the album folder into the inbox's _Duplicates folder. Safe to run again.</summary>
+        private void SetAsideDuplicates(AlbumJournal journal)
+        {
+            foreach (var entry in journal.SetAside.Where(e => !e.Done))
+            {
+                if (_ops.FileExists(entry.Source) && _ops.FileExists(entry.Target) && _ops.Length(entry.Source) == _ops.Length(entry.Target) && _ops.Sha256(entry.Source) == _ops.Sha256(entry.Target))
+                {
+                    _ops.DeleteFile(entry.Source); // the copy arrived and was checked, but the run was cut off before the original was removed
+                }
+                else if (_ops.FileExists(entry.Source))
+                {
+                    SafeMover.Move(_ops, entry.Source, entry.Target, _forceCopy);
+                }
+                entry.Done = true; // moved now, or by an earlier run that was cut off, or gone from the inbox
+                _journals.Save(journal);
+            }
+        }
+
+        /// <summary>Puts the set-aside files back where they were and tidies the _Duplicates folder.</summary>
+        private void RestoreSetAside(AlbumJournal journal)
+        {
+            foreach (var entry in journal.SetAside)
+            {
+                if (entry.Done && _ops.FileExists(entry.Target) && !_ops.FileExists(entry.Source))
+                {
+                    SafeMover.Move(_ops, entry.Target, entry.Source, _forceCopy);
+                }
+                entry.Done = false;
+            }
+            if (journal.SetAside.Count == 0) return;
+
+            var inbox = Path.GetFullPath(journal.InboxRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            foreach (var entry in journal.SetAside)
+            {
+                var current = Path.GetDirectoryName(Path.GetFullPath(entry.Target)) ?? string.Empty;
+                while (current.Length > inbox.Length && current.StartsWith(inbox + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!_ops.DeleteDirectoryIfEmpty(current)) break;
+                    current = Path.GetDirectoryName(current) ?? string.Empty;
+                }
+            }
         }
 
         /// <summary>Old library files saved aside by "replace" wait under the inbox in _Replaced/&lt;album id&gt;/, keeping their library-relative path.</summary>
