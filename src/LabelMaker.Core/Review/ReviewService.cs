@@ -58,20 +58,20 @@ namespace LabelMaker.Core.Review
         // ------------------------------------------------------------------ looking at an edition
 
         /// <summary>Shows what using this edition would do (with an optional hand-made mapping of files to tracks). Changes nothing.</summary>
-        public async Task<ReviewPreview> PreviewAsync(string id, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken cancellation = default)
+        public async Task<ReviewPreview> PreviewAsync(string id, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken cancellation = default, DuplicatePolicy onDuplicate = DuplicatePolicy.Refuse)
         {
             var open = Open(id, requireOpenState: true);
             if (open.Failure != null) return new ReviewPreview { Message = open.Failure.Message };
-            var planned = await PlanForReleaseAsync(open.Context!, releaseId, mapping, cancellation).ConfigureAwait(false);
+            var planned = await PlanForReleaseAsync(open.Context!, releaseId, mapping, cancellation, onDuplicate).ConfigureAwait(false);
             return planned.Preview;
         }
 
         /// <summary>Tags and files the album using this edition, after the same checks as the preview. Returns Success only when the album is filed.</summary>
-        public async Task<ReviewResult> ApplyAsync(string id, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken cancellation = default)
+        public async Task<ReviewResult> ApplyAsync(string id, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken cancellation = default, DuplicatePolicy onDuplicate = DuplicatePolicy.Refuse)
         {
             var open = Open(id, requireOpenState: true);
             if (open.Failure != null) return open.Failure;
-            var planned = await PlanForReleaseAsync(open.Context!, releaseId, mapping, cancellation).ConfigureAwait(false);
+            var planned = await PlanForReleaseAsync(open.Context!, releaseId, mapping, cancellation, onDuplicate).ConfigureAwait(false);
             if (planned.Plan == null || !planned.Preview.CanApply)
             {
                 var message = planned.Preview.Problems.Count > 0 ? string.Join(" ", planned.Preview.Problems) : planned.Preview.Message;
@@ -512,7 +512,7 @@ namespace LabelMaker.Core.Review
 
         private AlbumUnit? FindUnit(Lane lane, string id) => new InboxScanner().Scan(lane, _ops).FirstOrDefault(u => u.Id == id);
 
-        private async Task<(ReviewPreview Preview, AlbumPlan? Plan)> PlanForReleaseAsync(Context c, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken cancellation)
+        private async Task<(ReviewPreview Preview, AlbumPlan? Plan)> PlanForReleaseAsync(Context c, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken cancellation, DuplicatePolicy onDuplicate = DuplicatePolicy.Refuse)
         {
             ReleaseInfo? release;
             try
@@ -537,7 +537,7 @@ namespace LabelMaker.Core.Review
             try { verification = ReleaseVerifier.VerifyWithMapping(release, c.Files, forced, _settings.MinFileScore); }
             catch (ArgumentException e) { return (new ReviewPreview { Message = e.Message }, null); }
 
-            var plan = Planner.Plan(c.Unit.Id, c.Lane.InboxPath, c.Unit.Folder, c.Lane.LibraryPath, verification, _ops, OptionsFor(c.Unit));
+            var plan = Planner.Plan(c.Unit.Id, c.Lane.InboxPath, c.Unit.Folder, c.Lane.LibraryPath, verification, _ops, OptionsFor(c.Unit, onDuplicate));
             if (!_ops.DirectoryExists(c.Lane.LibraryPath)) plan.Problems.Add("The library folder for this lane was not found or cannot be reached.");
 
             var preview = new ReviewPreview
@@ -563,12 +563,23 @@ namespace LabelMaker.Core.Review
                     Title = a.Track?.Title ?? string.Empty,
                     Score = Math.Round(a.Score, 3),
                     Weak = a.Track == null || (a.Score < _settings.MinFileScore && !placedByPerson.Contains(a.File.Path)),
+                    Existing = planned != null && planned.ExistingBytes > 0,
+                    ExistingBytes = planned?.ExistingBytes ?? 0,
+                    NewBytes = SizeOf(a.File.Path),
                 });
             }
             preview.Problems.AddRange(plan.Problems);
+            preview.Notes.AddRange(plan.Notes);
+            preview.DuplicateCount = plan.DuplicateCount;
             preview.IsDuplicate = plan.IsDuplicate;
             preview.CanApply = plan.CanApply;
             if (plan.Files.Count > 0) preview.Destination = Path.GetRelativePath(c.Lane.LibraryPath, Path.GetDirectoryName(plan.Files[0].Destination)!);
+        }
+
+        private long SizeOf(string path)
+        {
+            try { return _ops.Length(path); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return 0; }
         }
 
         private ReviewResult ApplyPlan(Context c, AlbumPlan plan, ReviewPreview preview, string source)
@@ -596,7 +607,15 @@ namespace LabelMaker.Core.Review
             return new ReviewResult { Success = outcome.State == QueueState.Done, Message = outcome.Reason, State = outcome.State };
         }
 
-        private PlannerOptions OptionsFor(AlbumUnit unit) => unit.Kind == UnitKind.Single ? AlbumProcessor.CopyWithoutCover(_planner) : _planner;
+        private PlannerOptions OptionsFor(AlbumUnit unit, DuplicatePolicy onDuplicate = DuplicatePolicy.Refuse)
+        {
+            var options = unit.Kind == UnitKind.Single ? AlbumProcessor.CopyWithoutCover(_planner) : _planner;
+            if (options.OnDuplicate == onDuplicate) return options;
+            var copy = AlbumProcessor.CopyWithoutCover(options);
+            copy.MoveCover = options.MoveCover;
+            copy.OnDuplicate = onDuplicate;
+            return copy;
+        }
 
         private static void AddSorted(ReviewCandidates result, IEnumerable<ReleaseVerification> found, int limit)
         {

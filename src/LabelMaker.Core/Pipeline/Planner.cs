@@ -9,8 +9,24 @@ using LabelMaker.Core.Naming;
 
 namespace LabelMaker.Core.Pipeline
 {
+    /// <summary>What to do when a file with the planned name is already in the library.</summary>
+    public enum DuplicatePolicy
+    {
+        /// <summary>Write nothing; the album waits for a person (the automatic behavior).</summary>
+        Refuse,
+
+        /// <summary>The new file gets a number after its name, "(2)" and so on; nothing existing is touched.</summary>
+        KeepBoth,
+
+        /// <summary>The old file is saved in the inbox's _Replaced folder and the new file takes its place; Undo puts the old one back.</summary>
+        Replace,
+    }
+
     public sealed class PlannerOptions
     {
+        /// <summary>Only a person's choice on the review screen sets anything but Refuse.</summary>
+        public DuplicatePolicy OnDuplicate { get; set; } = DuplicatePolicy.Refuse;
+
         /// <summary>Picard's stock naming script, as used by the owner (Preset 1): Artist/Album/01 Title, the disc in the file name.</summary>
         public const string PicardDefaultScript =
             "$if2(%albumartist%,%artist%)/\n" +
@@ -43,6 +59,9 @@ namespace LabelMaker.Core.Pipeline
     {
         public string Source { get; set; } = string.Empty;
         public string Destination { get; set; } = string.Empty;
+
+        /// <summary>True when the destination holds an older file that is saved aside first (the "replace" choice).</summary>
+        public bool ReplacesExisting { get; set; }
     }
 
     public sealed class PlannedFile
@@ -52,6 +71,12 @@ namespace LabelMaker.Core.Pipeline
         public TrackTags OldTags { get; set; } = new TrackTags();
         public TrackTags NewTags { get; set; } = new TrackTags();
         public List<PlannedSidecar> Sidecars { get; } = new List<PlannedSidecar>();
+
+        /// <summary>True when the library already holds a file with the planned name, and the "replace" choice saves it aside first.</summary>
+        public bool ReplacesExisting { get; set; }
+
+        /// <summary>The size of the file that was already at the planned name, or 0 when none was.</summary>
+        public long ExistingBytes { get; set; }
     }
 
     /// <summary>Everything that would be done for one album, worked out without touching a file.</summary>
@@ -70,6 +95,12 @@ namespace LabelMaker.Core.Pipeline
 
         /// <summary>True when a destination already holds a file: the album is a duplicate and nothing may be written.</summary>
         public bool IsDuplicate { get; set; }
+
+        /// <summary>How many files already had a file of the planned name in the library (whatever the policy did about it).</summary>
+        public int DuplicateCount { get; set; }
+
+        /// <summary>Plain sentences about what a duplicate choice does (shown on the preview; not problems).</summary>
+        public List<string> Notes { get; } = new List<string>();
 
         public bool CanApply => Problems.Count == 0;
     }
@@ -150,7 +181,7 @@ namespace LabelMaker.Core.Pipeline
                 plan.Files.Add(planned);
             }
 
-            CheckDestinations(plan, ops);
+            CheckDestinations(plan, ops, options);
             if (options.MoveCover) AddCover(plan, ops, options);
             return plan;
         }
@@ -202,7 +233,7 @@ namespace LabelMaker.Core.Pipeline
             return full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
         }
 
-        private static void CheckDestinations(AlbumPlan plan, IFileOps ops)
+        private static void CheckDestinations(AlbumPlan plan, IFileOps ops, PlannerOptions options)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var file in plan.Files)
@@ -210,13 +241,62 @@ namespace LabelMaker.Core.Pipeline
                 if (!seen.Add(file.Destination))
                 {
                     plan.Problems.Add($"Two files would get the same name: {Path.GetFileName(file.Destination)}.");
+                    continue;
                 }
-                else if (ops.FileExists(file.Destination))
+                if (!ops.FileExists(file.Destination)) continue;
+
+                plan.DuplicateCount++;
+                file.ExistingBytes = ops.Length(file.Destination);
+                var name = Path.GetFileName(file.Destination);
+                switch (options.OnDuplicate)
                 {
-                    plan.IsDuplicate = true;
-                    plan.Problems.Add($"\"{Path.GetFileName(file.Destination)}\" is already in the library.");
+                    case DuplicatePolicy.Replace:
+                        file.ReplacesExisting = true;
+                        foreach (var sidecar in file.Sidecars) sidecar.ReplacesExisting = ops.FileExists(sidecar.Destination);
+                        plan.Notes.Add($"\"{name}\" is already in the library. The old file is saved in the inbox's _Replaced folder and the new one takes its place; Undo puts the old one back.");
+                        break;
+
+                    case DuplicatePolicy.KeepBoth:
+                        var renamed = FreeName(file, seen, ops);
+                        if (renamed == null)
+                        {
+                            plan.Problems.Add($"\"{name}\" is already in the library and no free numbered name was found.");
+                        }
+                        else if (renamed.Length > options.MaxPathLength)
+                        {
+                            plan.Problems.Add($"The path for \"{Path.GetFileName(renamed)}\" is {renamed.Length} characters long; the limit is {options.MaxPathLength}.");
+                        }
+                        else
+                        {
+                            file.Destination = renamed;
+                            seen.Add(renamed);
+                            foreach (var sidecar in file.Sidecars) sidecar.Destination = Path.ChangeExtension(renamed, Path.GetExtension(sidecar.Destination));
+                            plan.Notes.Add($"\"{name}\" is already in the library, so the new copy is named \"{Path.GetFileName(renamed)}\" and both are kept.");
+                        }
+                        break;
+
+                    default:
+                        plan.IsDuplicate = true;
+                        plan.Problems.Add($"\"{name}\" is already in the library.");
+                        break;
                 }
             }
+        }
+
+        /// <summary>"Title.mp3" becomes "Title (2).mp3", then "(3)" and so on: the first name where neither the file nor its sidecars exist or are planned.</summary>
+        private static string? FreeName(PlannedFile file, HashSet<string> planned, IFileOps ops)
+        {
+            var folder = Path.GetDirectoryName(file.Destination)!;
+            var stem = Path.GetFileNameWithoutExtension(file.Destination);
+            var extension = Path.GetExtension(file.Destination);
+            for (int n = 2; n <= 99; n++)
+            {
+                var candidate = Path.Combine(folder, $"{stem} ({n}){extension}");
+                if (planned.Contains(candidate) || ops.FileExists(candidate)) continue;
+                if (file.Sidecars.Any(s => ops.FileExists(Path.ChangeExtension(candidate, Path.GetExtension(s.Destination))))) continue;
+                return candidate;
+            }
+            return null;
         }
 
         /// <summary>One cover image per album: the first of cover, folder, albumart found in the folder, moved as "cover" plus its extension.</summary>

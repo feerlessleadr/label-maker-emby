@@ -1,6 +1,6 @@
 # Label Maker plugin routes (`/emby/LabelMaker/...`)
 
-Plugin 0.1.1.0, `ApiLevel` 1. Every route needs an **administrator** token (`X-Emby-Token`); a request without one is refused. Bodies are JSON. Field names are exactly as written. Nothing in an answer is a file path except the library-relative `Destination` and the inbox-relative `Folder` of an album (names of folders, never a drive or share). The phone alerts have their own contract: `docs/NOTIFICATIONS.md`.
+Plugin 0.1.8.0 (`OnDuplicate` and the duplicate fields of a preview are new in that version), `ApiLevel` 1. Every route needs an **administrator** token (`X-Emby-Token`); a request without one is refused. Bodies are JSON. Field names are exactly as written. Nothing in an answer is a file path except the library-relative `Destination` and the inbox-relative `Folder` of an album (names of folders, never a drive or share). The phone alerts have their own contract: `docs/NOTIFICATIONS.md`.
 
 ## Plugin and alerts
 | Route | Answer |
@@ -31,8 +31,8 @@ Each returns `{ Success, Message, State }` unless noted; `Message` is written fo
 
 | Route | Body | What it does |
 |---|---|---|
-| `Albums/{Id}/Preview` | `{ ReleaseId, Mapping?: [{ File, Disc, Position }] }` | What using that edition would do. Answer: `{ Success, Message, ReleaseId, Title, Artist, Date, Country, Score, Files: [{ Source, Destination, Disc, Position, Title, Score, Weak }], Problems, CanApply, IsDuplicate, Destination }`. Changes nothing. |
-| `Albums/{Id}/Apply` | the same | Tags and files the album with that edition (after the same checks). |
+| `Albums/{Id}/Preview` | `{ ReleaseId, Mapping?: [{ File, Disc, Position }], OnDuplicate?: "KeepBoth" or "Replace" }` | What using that edition would do. Answer: `{ Success, Message, ReleaseId, Title, Artist, Date, Country, Score, Files: [{ Source, Destination, Disc, Position, Title, Score, Weak, Existing, ExistingBytes, NewBytes }], Problems, Notes, CanApply, IsDuplicate, DuplicateCount, Destination }`. `OnDuplicate` is empty by default: a file already in the library then makes `IsDuplicate` true and `CanApply` false. `"KeepBoth"` numbers the new copies; `"Replace"` saves the old files in the inbox's `_Replaced` folder (`Notes` says which). Anything else is refused with `400`. Changes nothing. |
+| `Albums/{Id}/Apply` | the same, including `OnDuplicate` | Tags and files the album with that edition (after the same checks). Undo works for every choice. |
 | `Albums/{Id}/Search` | `{ Artist, Album }` | `{ Success, Message, Candidates }` from MusicBrainz, each scored against the files. |
 | `Albums/{Id}/Resolve` | `{ Text }` | A pasted MusicBrainz release link, release-group link or bare id turned into `Candidates`. |
 | `Albums/{Id}/KeepTags` | | Files the album with its own tags unchanged. |

@@ -111,6 +111,18 @@ namespace LabelMaker.Core.Pipeline
                         Touch(item, now);
                     }
 
+                    // Marked filed, yet audio files are still in the inbox folder: 0.1.7.0 and earlier said "already applied" for tracks that arrived
+                    // later in a folder that had been filed, and left them there. They are checked again like any new album.
+                    if (item.State == QueueState.Done && !item.Held && unit.Files.Count > 0)
+                    {
+                        item.State = QueueState.Waiting;
+                        item.Reason = string.Empty;
+                        item.Match = null;
+                        item.Attempts = 0;
+                        item.NextAttemptUtc = DateTime.MinValue;
+                        Touch(item, now);
+                    }
+
                     // Dry run was turned off after this album was shown as Ready: check it again so it is filed by the same rules.
                     if (!_options.DryRun && item.State == QueueState.Ready && !item.Held)
                     {

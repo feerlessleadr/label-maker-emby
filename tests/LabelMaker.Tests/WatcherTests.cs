@@ -552,6 +552,86 @@ namespace LabelMaker.Tests
         }
 
         [Fact]
+        public async Task MoreTracksArrivingLaterInTheSameFolderAreFiledToo()
+        {
+            using var s = new InboxSandbox();
+            TwoInsomniacTracks(s);
+            var clock = new Clock();
+            var mb = Searchable();
+            var worker = NewWorker(s, mb, clock, dryRun: false);
+            await worker.RunPassAsync(CancellationToken.None);
+            clock.Now = Start.AddSeconds(61);
+            await worker.RunPassAsync(CancellationToken.None);
+            Assert.Equal(QueueState.Done, new QueueStore(s.QueuePath).All().Single().State);
+
+            // MusicGrabber downloads track by track: a third track lands in the same folder later.
+            s.AddTrack(@"Albums\Green Day\Insomniac", "03 - Geek Stink Breath.mp3", "Geek Stink Breath", 3);
+            clock.Now = Start.AddMinutes(10);
+            await worker.RunPassAsync(CancellationToken.None);
+            clock.Now = Start.AddMinutes(12);
+            await worker.RunPassAsync(CancellationToken.None);
+
+            Assert.Empty(Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories));
+            Assert.Equal(3, Directory.EnumerateFiles(s.Library, "*.mp3", SearchOption.AllDirectories).Count());
+        }
+
+        [Fact]
+        public async Task AnAlbumMarkedFiledByEarlierVersionsWithTracksStillInTheInboxIsFiledNow()
+        {
+            using var s = new InboxSandbox();
+            TwoInsomniacTracks(s);
+            var clock = new Clock();
+            var mb = Searchable();
+            var worker = NewWorker(s, mb, clock, dryRun: false);
+            await worker.RunPassAsync(CancellationToken.None);
+            clock.Now = Start.AddSeconds(61);
+            await worker.RunPassAsync(CancellationToken.None);
+
+            // What 0.1.7.0 left behind: a third track in the inbox while the queue says the album is filed, with the fingerprint up to date.
+            s.AddTrack(@"Albums\Green Day\Insomniac", "03 - Geek Stink Breath.mp3", "Geek Stink Breath", 3);
+            var store = new QueueStore(s.QueuePath);
+            var item = store.All().Single();
+            item.Fingerprint = new InboxScanner().Scan(s.Lane, new RealFileOps()).Single().Fingerprint;
+            store.Save(item);
+
+            clock.Now = Start.AddMinutes(10);
+            await worker.RunPassAsync(CancellationToken.None);
+            clock.Now = Start.AddMinutes(12);
+            await worker.RunPassAsync(CancellationToken.None);
+
+            Assert.Empty(Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories));
+            Assert.Equal(3, Directory.EnumerateFiles(s.Library, "*.mp3", SearchOption.AllDirectories).Count());
+        }
+
+        [Fact]
+        public async Task UndoOfALaterBatchBringsBackOnlyThatBatchAndThenTheEarlierOne()
+        {
+            using var s = new InboxSandbox();
+            TwoInsomniacTracks(s);
+            var clock = new Clock();
+            var mb = Searchable();
+            var worker = NewWorker(s, mb, clock, dryRun: false);
+            await worker.RunPassAsync(CancellationToken.None);
+            clock.Now = Start.AddSeconds(61);
+            await worker.RunPassAsync(CancellationToken.None);
+            s.AddTrack(@"Albums\Green Day\Insomniac", "03 - Geek Stink Breath.mp3", "Geek Stink Breath", 3);
+            clock.Now = Start.AddMinutes(10);
+            await worker.RunPassAsync(CancellationToken.None);
+            clock.Now = Start.AddMinutes(12);
+            await worker.RunPassAsync(CancellationToken.None);
+            var id = new QueueStore(s.QueuePath).All().Single().Id;
+            var applier = new Applier(new RealFileOps(), new JournalStore(s.Journals), new TagWriteOptions());
+
+            Assert.True(applier.Undo(id).Success);
+            Assert.Single(Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories));
+            Assert.Equal(2, Directory.EnumerateFiles(s.Library, "*.mp3", SearchOption.AllDirectories).Count());
+
+            Assert.True(applier.Undo(id).Success);
+            Assert.Equal(3, Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories).Count());
+            Assert.Empty(Directory.EnumerateFiles(s.Library, "*.mp3", SearchOption.AllDirectories));
+        }
+
+        [Fact]
         public async Task AnAlbumThatWasReadyInADryRunIsFiledOnceDryRunIsTurnedOff()
         {
             using var s = new InboxSandbox();

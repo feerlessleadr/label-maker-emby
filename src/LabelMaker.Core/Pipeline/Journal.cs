@@ -14,6 +14,19 @@ namespace LabelMaker.Core.Pipeline
         public bool Done { get; set; }
     }
 
+    /// <summary>An older library file that the "replace" choice saved aside so Undo can put it back.</summary>
+    public sealed class ReplacedFile
+    {
+        /// <summary>Where the old file was in the library (and where the new one goes).</summary>
+        public string Destination { get; set; } = string.Empty;
+
+        /// <summary>Where the old file waits: under the inbox's _Replaced folder.</summary>
+        public string BackupPath { get; set; } = string.Empty;
+
+        /// <summary>True once the old file has been moved to <see cref="BackupPath"/>.</summary>
+        public bool Done { get; set; }
+    }
+
     public sealed class HousekeepingBackup
     {
         public string Path { get; set; } = string.Empty;
@@ -56,6 +69,15 @@ namespace LabelMaker.Core.Pipeline
         /// <summary>Small housekeeping files deleted from the inbox after the move (.albuminfo, a second cover), kept so Undo can bring them back.</summary>
         public List<HousekeepingBackup> Housekeeping { get; set; } = new List<HousekeepingBackup>();
 
+        /// <summary>
+        /// When more files for the same album folder were filed later (MusicGrabber downloads track by track), the record of the earlier batch is kept
+        /// under this id. Undoing this batch brings that record back, so Undo steps back one batch at a time.
+        /// </summary>
+        public string PreviousJournalId { get; set; } = string.Empty;
+
+        /// <summary>Old library files saved aside by the "replace" choice (empty otherwise).</summary>
+        public List<ReplacedFile> Replaced { get; set; } = new List<ReplacedFile>();
+
         /// <summary>The cover image Label Maker downloaded into the library folder after filing (empty when none); Undo removes it.</summary>
         public string AddedCover { get; set; } = string.Empty;
     }
@@ -95,6 +117,27 @@ namespace LabelMaker.Core.Pipeline
             File.WriteAllText(temp, JsonSerializer.Serialize(journal, Json));
             if (File.Exists(path)) File.Delete(path);
             File.Move(temp, path);
+        }
+
+        /// <summary>Keeps a copy of a finished album's record under a new id and returns that id (the record at the album's own id is then free to be replaced).</summary>
+        public string Archive(AlbumJournal journal)
+        {
+            var id = journal.AlbumId + "-" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", System.Globalization.CultureInfo.InvariantCulture);
+            var path = PathFor(id);
+            var temp = path + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(journal, Json));
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(temp, path);
+            return id;
+        }
+
+        /// <summary>An archived record by the id <see cref="Archive"/> returned, or null.</summary>
+        public AlbumJournal? LoadArchived(string archiveId) => Load(archiveId);
+
+        public void DeleteArchived(string archiveId)
+        {
+            var path = PathFor(archiveId);
+            if (File.Exists(path)) File.Delete(path);
         }
 
         private string PathFor(string albumId)

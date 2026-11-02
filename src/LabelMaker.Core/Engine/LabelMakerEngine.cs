@@ -380,8 +380,17 @@ namespace LabelMaker.Core.Engine
 
         // ------------------------------------------------------------------ review actions
 
-        public Task<ReviewPreview> PreviewAsync(string id, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken ct = default) =>
-            GetComponents(_host.Settings()).Review.PreviewAsync(id, releaseId, mapping, ct);
+        /// <summary>"KeepBoth" or "Replace" (any capitals) for a person's choice about files already in the library; empty means the default (write nothing). Anything else is refused.</summary>
+        public static DuplicatePolicy PolicyFrom(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return DuplicatePolicy.Refuse;
+            if (string.Equals(text.Trim(), "KeepBoth", StringComparison.OrdinalIgnoreCase)) return DuplicatePolicy.KeepBoth;
+            if (string.Equals(text.Trim(), "Replace", StringComparison.OrdinalIgnoreCase)) return DuplicatePolicy.Replace;
+            throw new ArgumentException("OnDuplicate must be empty, \"KeepBoth\" or \"Replace\".");
+        }
+
+        public Task<ReviewPreview> PreviewAsync(string id, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken ct = default, DuplicatePolicy onDuplicate = DuplicatePolicy.Refuse) =>
+            GetComponents(_host.Settings()).Review.PreviewAsync(id, releaseId, mapping, ct, onDuplicate);
 
         public Task<ReviewCandidates> SearchAsync(string id, string artist, string album, CancellationToken ct = default) =>
             GetComponents(_host.Settings()).Review.SearchAsync(id, artist, album, ct);
@@ -389,8 +398,8 @@ namespace LabelMaker.Core.Engine
         public Task<ReviewCandidates> ResolveAsync(string id, string pasted, CancellationToken ct = default) =>
             GetComponents(_host.Settings()).Review.ResolveReferenceAsync(id, pasted, ct);
 
-        public Task<ReviewResult> ApplyAsync(string id, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken ct = default) =>
-            Change(id, r => r.ApplyAsync(id, releaseId, mapping, ct));
+        public Task<ReviewResult> ApplyAsync(string id, string releaseId, IReadOnlyList<MappingEntry>? mapping, CancellationToken ct = default, DuplicatePolicy onDuplicate = DuplicatePolicy.Refuse) =>
+            Change(id, r => r.ApplyAsync(id, releaseId, mapping, ct, onDuplicate));
 
         public Task<ReviewResult> KeepMyTagsAsync(string id) => Change(id, r => Task.FromResult(r.KeepMyTags(id)));
         public Task<ReviewResult> SkipAsync(string id) => Change(id, r => Task.FromResult(r.Skip(id)));

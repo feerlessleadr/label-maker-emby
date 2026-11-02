@@ -116,6 +116,81 @@ namespace LabelMaker.Tests
             Assert.False(saved.Held);
         }
 
+        private static string OldBratInTheLibrary(InboxSandbox s)
+        {
+            var folder = Path.Combine(s.Library, "Green Day", "Insomniac");
+            Directory.CreateDirectory(folder);
+            var old = Path.Combine(folder, "1-02 Brat.mp3");
+            File.WriteAllText(old, "old brat");
+            return old;
+        }
+
+        [Fact]
+        public async Task AnAlbumWithAFileAlreadyInTheLibraryNeedsAChoiceAndKeepBothFilesBothCopies()
+        {
+            using var s = new InboxSandbox();
+            TwoTracks(s);
+            var old = OldBratInTheLibrary(s);
+            var store = new QueueStore(s.QueuePath);
+            var item = Enqueue(s, store);
+            var service = Service(s, store, Searchable());
+
+            var plain = await service.PreviewAsync(item.Id, Insomniac().Id, null);
+            Assert.True(plain.IsDuplicate);
+            Assert.False(plain.CanApply);
+            Assert.Equal(1, plain.DuplicateCount);
+            Assert.False((await service.ApplyAsync(item.Id, Insomniac().Id, null)).Success);
+
+            var both = await service.PreviewAsync(item.Id, Insomniac().Id, null, default, DuplicatePolicy.KeepBoth);
+            Assert.True(both.CanApply, string.Join(" ", both.Problems));
+            Assert.False(both.IsDuplicate);
+            Assert.Contains("1-02 Brat (2).mp3", both.Files.Select(f => f.Destination).Single(d => d.Contains("(2)")));
+            var existing = Assert.Single(both.Files, f => f.Existing);
+            Assert.Equal(8, existing.ExistingBytes);
+            Assert.True(existing.NewBytes > 8);
+            Assert.Single(both.Notes);
+
+            var result = await service.ApplyAsync(item.Id, Insomniac().Id, null, default, DuplicatePolicy.KeepBoth);
+
+            Assert.True(result.Success, result.Message);
+            Assert.Equal("old brat", File.ReadAllText(old));
+            Assert.Equal(3, LibraryAudio(s).Count);
+            Assert.Empty(InboxAudio(s));
+        }
+
+        [Fact]
+        public async Task ReplaceKeepsTheOldFileInTheReplacedFolderAndUndoBringsItBack()
+        {
+            using var s = new InboxSandbox();
+            TwoTracks(s);
+            var old = OldBratInTheLibrary(s);
+            var store = new QueueStore(s.QueuePath);
+            var item = Enqueue(s, store);
+            var service = Service(s, store, Searchable());
+
+            var result = await service.ApplyAsync(item.Id, Insomniac().Id, null, default, DuplicatePolicy.Replace);
+
+            Assert.True(result.Success, result.Message);
+            Assert.Equal("Brat", TrackTagFile.Read(old).Title);
+            Assert.Equal("old brat", File.ReadAllText(Path.Combine(s.Inbox, "_Replaced", item.Id, "Green Day", "Insomniac", "1-02 Brat.mp3")));
+
+            var undone = service.Undo(item.Id);
+
+            Assert.True(undone.Success, undone.Message);
+            Assert.Equal("old brat", File.ReadAllText(old));
+            Assert.False(Directory.Exists(Path.Combine(s.Inbox, "_Replaced")));
+            Assert.Equal(2, InboxAudio(s).Count);
+        }
+
+        [Fact]
+        public void AnUnknownDuplicateChoiceIsRefusedByName()
+        {
+            Assert.Equal(DuplicatePolicy.Refuse, LabelMaker.Core.Engine.LabelMakerEngine.PolicyFrom(null));
+            Assert.Equal(DuplicatePolicy.KeepBoth, LabelMaker.Core.Engine.LabelMakerEngine.PolicyFrom("keepboth"));
+            Assert.Equal(DuplicatePolicy.Replace, LabelMaker.Core.Engine.LabelMakerEngine.PolicyFrom(" Replace "));
+            Assert.Throws<ArgumentException>(() => LabelMaker.Core.Engine.LabelMakerEngine.PolicyFrom("overwrite"));
+        }
+
         [Fact]
         public async Task UndoPutsTheAlbumBackAndTheWorkerDoesNotRedoIt()
         {

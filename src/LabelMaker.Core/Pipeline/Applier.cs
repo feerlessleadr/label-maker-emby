@@ -60,9 +60,15 @@ namespace LabelMaker.Core.Pipeline
         public ApplyResult Apply(AlbumPlan plan, bool dryRun)
         {
             var existing = _journals.Load(plan.AlbumId);
+            bool laterBatch = false;
             if (existing != null && existing.State == "Applied")
             {
-                return new ApplyResult { State = ApplyState.Applied, Message = "Already applied." };
+                // The same finished plan sent again: its files are gone from the inbox, so there is nothing left to do.
+                if (plan.Files.Count == 0 || plan.Files.All(f => !_ops.FileExists(f.Source)))
+                {
+                    return new ApplyResult { State = ApplyState.Applied, Message = "Already applied." };
+                }
+                laterBatch = true; // more files arrived later in a folder that was filed before: they are a new batch of their own
             }
 
             // A cut-off earlier run is finished from its journal, whatever the new plan says: the new plan may see the files the
@@ -84,7 +90,9 @@ namespace LabelMaker.Core.Pipeline
                 return new ApplyResult { State = ApplyState.DryRun, Message = resume ? "Would finish the earlier, cut-off run." : $"Would tag and move {plan.Files.Count} file(s)." };
             }
 
-            return Run(resume ? existing! : NewJournal(plan));
+            var journal = resume ? existing! : NewJournal(plan);
+            if (laterBatch) journal.PreviousJournalId = _journals.Archive(existing!);
+            return Run(journal);
         }
 
         /// <summary>Finishes an album whose earlier run was cut off or failed, from its journal alone.</summary>
@@ -111,6 +119,9 @@ namespace LabelMaker.Core.Pipeline
                 {
                     if (file.Step == "Pending") TagInPlace(file, journal);
                 }
+
+                // Phase 1b: when the person chose "replace", the old library files are saved aside before any new file moves in.
+                BackUpReplaced(journal);
 
                 // Phase 2: move the files and their sidecars into the library.
                 foreach (var file in journal.Files)
@@ -142,6 +153,15 @@ namespace LabelMaker.Core.Pipeline
 
             try
             {
+                // An undo must never leave the library without a track: if a saved-aside old file has gone missing, stop before anything moves.
+                foreach (var old in journal.Replaced)
+                {
+                    if (old.Done && !_ops.FileExists(old.BackupPath) && _ops.FileExists(old.Destination))
+                    {
+                        return new UndoResult { Success = false, Message = $"\"{Path.GetFileName(old.Destination)}\" replaced an older file, and that older file is no longer in the inbox's _Replaced folder. Undoing would leave the library without it, so nothing was changed." };
+                    }
+                }
+
                 foreach (var file in journal.Files)
                 {
                     foreach (var sidecar in file.Sidecars) MoveSidecarBack(sidecar);
@@ -169,6 +189,7 @@ namespace LabelMaker.Core.Pipeline
                     }
                 }
                 journal.Housekeeping.Clear();
+                RestoreReplaced(journal);
                 if (journal.AddedCover.Length > 0)
                 {
                     if (_ops.FileExists(journal.AddedCover)) _ops.DeleteFile(journal.AddedCover);
@@ -179,6 +200,17 @@ namespace LabelMaker.Core.Pipeline
                 journal.State = "Undone";
                 journal.Message = string.Empty;
                 _journals.Save(journal);
+
+                // An earlier batch of the same album folder is still filed: its record takes this one's place, so the next Undo steps back one more batch.
+                if (journal.PreviousJournalId.Length > 0)
+                {
+                    var previous = _journals.LoadArchived(journal.PreviousJournalId);
+                    if (previous != null)
+                    {
+                        _journals.Save(previous);
+                        _journals.DeleteArchived(journal.PreviousJournalId);
+                    }
+                }
                 return new UndoResult { Success = true, Message = "The album was put back in the inbox with its old tags." };
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
@@ -204,7 +236,75 @@ namespace LabelMaker.Core.Pipeline
                 journal.Files.Add(entry);
             }
             foreach (var s in plan.AlbumSidecars) journal.AlbumSidecars.Add(new JournalSidecar { Source = s.Source, Destination = s.Destination });
+
+            foreach (var f in plan.Files)
+            {
+                if (f.ReplacesExisting) journal.Replaced.Add(new ReplacedFile { Destination = f.Destination, BackupPath = BackupPathFor(plan, f.Destination) });
+                foreach (var s in f.Sidecars.Where(x => x.ReplacesExisting))
+                {
+                    journal.Replaced.Add(new ReplacedFile { Destination = s.Destination, BackupPath = BackupPathFor(plan, s.Destination) });
+                }
+            }
             return journal;
+        }
+
+        /// <summary>Old library files saved aside by "replace" wait under the inbox in _Replaced/&lt;album id&gt;/, keeping their library-relative path.</summary>
+        private static string BackupPathFor(AlbumPlan plan, string destination) =>
+            Path.Combine(plan.InboxRoot, "_Replaced", plan.AlbumId, Path.GetRelativePath(plan.LibraryRoot, destination));
+
+        /// <summary>
+        /// Saves every old library file that is about to be replaced into the inbox's _Replaced folder. Runs after every new file has been tagged
+        /// and before any new file moves, so a failure in between leaves the library as it was or has the old files safely aside. Safe to run again.
+        /// </summary>
+        private void BackUpReplaced(AlbumJournal journal)
+        {
+            foreach (var old in journal.Replaced.Where(r => !r.Done))
+            {
+                if (!_ops.FileExists(old.Destination))
+                {
+                    old.Done = true; // moved aside by an earlier run that was cut off before it noted so
+                }
+                else if (_ops.FileExists(old.BackupPath))
+                {
+                    if (_ops.Length(old.BackupPath) != _ops.Length(old.Destination) || _ops.Sha256(old.BackupPath) != _ops.Sha256(old.Destination))
+                    {
+                        throw new IOException($"\"{Path.GetFileName(old.Destination)}\" cannot be saved aside because a different file is already waiting in the _Replaced folder.");
+                    }
+                    _ops.DeleteFile(old.Destination); // the copy arrived and was checked, but the run was cut off before the original was removed
+                    old.Done = true;
+                }
+                else
+                {
+                    SafeMover.Move(_ops, old.Destination, old.BackupPath, _forceCopy);
+                    old.Done = true;
+                }
+                _journals.Save(journal);
+            }
+        }
+
+        /// <summary>Puts the saved-aside old files back where they were and tidies the _Replaced folder.</summary>
+        private void RestoreReplaced(AlbumJournal journal)
+        {
+            foreach (var old in journal.Replaced)
+            {
+                if (old.Done && _ops.FileExists(old.BackupPath) && !_ops.FileExists(old.Destination))
+                {
+                    SafeMover.Move(_ops, old.BackupPath, old.Destination, _forceCopy);
+                }
+                old.Done = false;
+            }
+            if (journal.Replaced.Count == 0) return;
+
+            var inbox = Path.GetFullPath(journal.InboxRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            foreach (var old in journal.Replaced)
+            {
+                var current = Path.GetDirectoryName(Path.GetFullPath(old.BackupPath)) ?? string.Empty;
+                while (current.Length > inbox.Length && current.StartsWith(inbox + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!_ops.DeleteDirectoryIfEmpty(current)) break;
+                    current = Path.GetDirectoryName(current) ?? string.Empty;
+                }
+            }
         }
 
         /// <summary>Writes the new tags into the file where it is, then reads them back to be sure they were saved.</summary>

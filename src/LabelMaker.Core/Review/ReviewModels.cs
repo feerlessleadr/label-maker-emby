@@ -37,6 +37,15 @@ namespace LabelMaker.Core.Review
 
         /// <summary>No track on the release, or fits it poorly (and a person did not place it). The screen shows these first.</summary>
         public bool Weak { get; set; }
+
+        /// <summary>A file with this destination name is already in the library.</summary>
+        public bool Existing { get; set; }
+
+        /// <summary>The library file's size in bytes when <see cref="Existing"/>, so a person can compare it with <see cref="NewBytes"/>.</summary>
+        public long ExistingBytes { get; set; }
+
+        /// <summary>The size in bytes of the file in the inbox.</summary>
+        public long NewBytes { get; set; }
     }
 
     /// <summary>What would happen if one edition were used for an album: shown before anything is changed.</summary>
@@ -54,6 +63,13 @@ namespace LabelMaker.Core.Review
         public List<string> Problems { get; } = new List<string>();
         public bool CanApply { get; set; }
         public bool IsDuplicate { get; set; }
+
+        /// <summary>How many files already have a file of that name in the library (the screen offers "keep both" and "replace" when this is above zero).</summary>
+        public int DuplicateCount { get; set; }
+
+        /// <summary>What the chosen duplicate handling does, in plain sentences (empty for the default).</summary>
+        public List<string> Notes { get; } = new List<string>();
+
         public string Destination { get; set; } = string.Empty;
     }
 

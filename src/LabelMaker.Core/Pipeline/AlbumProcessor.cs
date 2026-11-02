@@ -195,7 +195,7 @@ namespace LabelMaker.Core.Pipeline
 
         internal static PlannerOptions CopyWithoutCover(PlannerOptions source)
         {
-            var copy = new PlannerOptions { NamingScript = source.NamingScript, MaxPathLength = source.MaxPathLength, ReuseExistingFolders = source.ReuseExistingFolders, MoveCover = false };
+            var copy = new PlannerOptions { NamingScript = source.NamingScript, MaxPathLength = source.MaxPathLength, ReuseExistingFolders = source.ReuseExistingFolders, MoveCover = false, OnDuplicate = source.OnDuplicate };
             copy.TrackSidecarExtensions.Clear();
             foreach (var e in source.TrackSidecarExtensions) copy.TrackSidecarExtensions.Add(e);
             return copy;

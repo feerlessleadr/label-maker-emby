@@ -284,6 +284,157 @@ namespace LabelMaker.Tests
             Assert.Equal(string.Empty, TrackTagFile.Read(Path.Combine(s.AlbumFolder, "01-07 - 86.mp3")).ReleaseMbid);
         }
 
+        // ---- duplicate choices -------------------------------------------------------------------------------
+
+        private static string LibraryAlbum(Scratch s) => Path.Combine(s.Library, "Green Day", "Insomniac");
+
+        /// <summary>An older copy of "86" and of the first "Armatage Shanks" (with its lyrics) is already in the library.</summary>
+        private static void OldCopiesInTheLibrary(Scratch s)
+        {
+            Directory.CreateDirectory(LibraryAlbum(s));
+            File.WriteAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3"), "old 86");
+            File.WriteAllText(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.mp3"), "old armatage");
+            File.WriteAllText(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.lrc"), "old lyrics");
+        }
+
+        private static PlannerOptions Policy(DuplicatePolicy policy) => new PlannerOptions { OnDuplicate = policy };
+
+        [Fact]
+        public void KeepBothNumbersTheNewCopyAndItsLyricsAndTouchesNothingThatIsThere()
+        {
+            using var s = ThreeTrackAlbum();
+            OldCopiesInTheLibrary(s);
+
+            var plan = MakePlan(s, options: Policy(DuplicatePolicy.KeepBoth));
+
+            Assert.True(plan.CanApply, string.Join(" ", plan.Problems));
+            Assert.False(plan.IsDuplicate);
+            Assert.Equal(2, plan.DuplicateCount);
+            Assert.Equal(2, plan.Notes.Count);
+            var armatage = plan.Files.Single(f => f.Destination.EndsWith("(2).mp3") && f.Destination.Contains("1-01"));
+            Assert.Equal("1-01 Armatage Shanks (2).lrc", Path.GetFileName(Assert.Single(armatage.Sidecars).Destination));
+            Assert.Equal("old armatage", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.mp3")));
+
+            var applied = NewApplier(s).Apply(plan, dryRun: false);
+            Assert.Equal(ApplyState.Applied, applied.State);
+            Assert.Equal("old 86", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3")));
+            Assert.Equal("old lyrics", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.lrc")));
+            Assert.True(File.Exists(Path.Combine(LibraryAlbum(s), "1-07 86 (2).mp3")));
+            Assert.True(File.Exists(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks (2).lrc")));
+            Assert.Empty(Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories));
+        }
+
+        [Fact]
+        public void KeepBothUsesTheNextFreeNumber()
+        {
+            using var s = ThreeTrackAlbum();
+            OldCopiesInTheLibrary(s);
+            File.WriteAllText(Path.Combine(LibraryAlbum(s), "1-07 86 (2).mp3"), "an earlier second copy");
+
+            var plan = MakePlan(s, options: Policy(DuplicatePolicy.KeepBoth));
+
+            Assert.Contains(plan.Files, f => f.Destination.EndsWith("1-07 86 (3).mp3"));
+        }
+
+        [Fact]
+        public void KeepBothUndoRemovesOnlyTheNumberedCopies()
+        {
+            using var s = ThreeTrackAlbum();
+            OldCopiesInTheLibrary(s);
+            var applier = NewApplier(s);
+            Assert.Equal(ApplyState.Applied, applier.Apply(MakePlan(s, options: Policy(DuplicatePolicy.KeepBoth)), dryRun: false).State);
+
+            var undone = applier.Undo("album-1");
+
+            Assert.True(undone.Success, undone.Message);
+            Assert.Equal("old 86", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3")));
+            Assert.DoesNotContain(RelativeFiles(s.Library), f => f.Contains("(2)"));
+            Assert.Equal(3, Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories).Count());
+        }
+
+        [Fact]
+        public void ReplaceSavesTheOldFilesAsideAndPutsTheNewOnesInTheirPlace()
+        {
+            using var s = ThreeTrackAlbum();
+            OldCopiesInTheLibrary(s);
+
+            var plan = MakePlan(s, options: Policy(DuplicatePolicy.Replace));
+            Assert.True(plan.CanApply, string.Join(" ", plan.Problems));
+            Assert.Equal(2, plan.DuplicateCount);
+
+            var applied = NewApplier(s).Apply(plan, dryRun: false);
+
+            Assert.Equal(ApplyState.Applied, applied.State);
+            Assert.Equal("86", TrackTagFile.Read(Path.Combine(LibraryAlbum(s), "1-07 86.mp3")).Title);
+            Assert.Equal("[00:01.00] la la", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.lrc")));
+            var saved = Path.Combine(s.Inbox, "_Replaced", "album-1", "Green Day", "Insomniac");
+            Assert.Equal("old 86", File.ReadAllText(Path.Combine(saved, "1-07 86.mp3")));
+            Assert.Equal("old armatage", File.ReadAllText(Path.Combine(saved, "1-01 Armatage Shanks.mp3")));
+            Assert.Equal("old lyrics", File.ReadAllText(Path.Combine(saved, "1-01 Armatage Shanks.lrc")));
+            Assert.DoesNotContain(RelativeFiles(s.Library), f => f.Contains("(2)"));
+        }
+
+        [Fact]
+        public void ReplaceUndoPutsTheOldFilesBackAndTidiesTheReplacedFolder()
+        {
+            using var s = ThreeTrackAlbum();
+            OldCopiesInTheLibrary(s);
+            var applier = NewApplier(s);
+            Assert.Equal(ApplyState.Applied, applier.Apply(MakePlan(s, options: Policy(DuplicatePolicy.Replace)), dryRun: false).State);
+
+            var undone = applier.Undo("album-1");
+
+            Assert.True(undone.Success, undone.Message);
+            Assert.Equal("old 86", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-07 86.mp3")));
+            Assert.Equal("old armatage", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.mp3")));
+            Assert.Equal("old lyrics", File.ReadAllText(Path.Combine(LibraryAlbum(s), "1-01 Armatage Shanks.lrc")));
+            Assert.False(Directory.Exists(Path.Combine(s.Inbox, "_Replaced")));
+            Assert.Equal(3, Directory.EnumerateFiles(s.Inbox, "*.mp3", SearchOption.AllDirectories).Count());
+        }
+
+        [Fact]
+        public void ReplaceUndoRefusesWhenTheSavedOldFileIsGoneSoTheLibraryNeverLosesATrack()
+        {
+            using var s = ThreeTrackAlbum();
+            OldCopiesInTheLibrary(s);
+            var applier = NewApplier(s);
+            Assert.Equal(ApplyState.Applied, applier.Apply(MakePlan(s, options: Policy(DuplicatePolicy.Replace)), dryRun: false).State);
+            File.Delete(Path.Combine(s.Inbox, "_Replaced", "album-1", "Green Day", "Insomniac", "1-07 86.mp3"));
+            var before = RelativeFiles(s.Root).ToList();
+
+            var undone = applier.Undo("album-1");
+
+            Assert.False(undone.Success);
+            Assert.Contains("_Replaced", undone.Message);
+            Assert.Equal(before, RelativeFiles(s.Root).ToList());
+        }
+
+        [Theory]
+        [InlineData(1, false)] // the first old file cannot be saved aside
+        [InlineData(2, false)]
+        [InlineData(1, true)]
+        public void AReplaceCutOffWhileSavingTheOldFilesLosesNothingAndFinishesOnTheNextRun(int failOnCall, bool forceCopy)
+        {
+            using var s = ThreeTrackAlbum();
+            OldCopiesInTheLibrary(s);
+            var ops = new FaultyOps(forceCopy ? "copy" : "move", failOnCall);
+            var applier = NewApplier(s, ops, forceCopy);
+
+            var first = applier.Apply(MakePlan(s, options: Policy(DuplicatePolicy.Replace)), dryRun: false);
+            Assert.Equal(ApplyState.Failed, first.State);
+            Assert.Empty(RelativeFiles(s.Library).Where(f => !f.Contains("1-07 86") && !f.Contains("1-01 Armatage")));
+
+            ops.Armed = false;
+            var second = applier.Apply(MakePlan(s, options: Policy(DuplicatePolicy.Replace)), dryRun: false);
+
+            Assert.Equal(ApplyState.Applied, second.State);
+            Assert.Equal("86", TrackTagFile.Read(Path.Combine(LibraryAlbum(s), "1-07 86.mp3")).Title);
+            var saved = Path.Combine(s.Inbox, "_Replaced", "album-1", "Green Day", "Insomniac");
+            Assert.Equal("old 86", File.ReadAllText(Path.Combine(saved, "1-07 86.mp3")));
+            Assert.Equal("old armatage", File.ReadAllText(Path.Combine(saved, "1-01 Armatage Shanks.mp3")));
+            Assert.DoesNotContain(RelativeFiles(s.Root), f => f.EndsWith(SafeMover.TempSuffix));
+        }
+
         // ---- undo --------------------------------------------------------------------------------------------
 
         [Theory]

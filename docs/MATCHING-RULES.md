@@ -108,7 +108,7 @@ The plain sentences you will see, and what each means:
 | "This folder holds 2 different albums by their tags. Use \"Split by album\" on the review screen to put each album in its own folder, or sort them yourself." | The tags name more than one album (for example "Insomniac" and "Dookie"). | Choose "Split by album" (below), or move each album into its own folder yourself; the inbox is checked again. |
 | "1 file(s) could not be read (name). Fix or remove them and the album is checked again." | A file is damaged or is not music. | Replace or delete that file. |
 | "These files have no album name to search for." | The tags have no album. | Type the album name in the review screen's search. |
-| "... is already in the library." | A file with the same name is already there. | Keep both (suffix), replace only if you choose, or discard the new one. |
+| "... is already in the library." | A file with the same name is already there. | Open the album, press **See what is already in the library**, then choose **Keep both** (the new copy gets a number, section 8e) or **Replace the old files** (the old ones are kept aside; section 8e), or discard the new one. |
 | "The path ... is N characters long." | The new file path would be too long for Windows. | Shorten a name or accept a shorter naming pattern. |
 | "MusicBrainz could not be reached" / "stayed busy" | Not a match problem: the service is down or busy. | Nothing. The album is retried automatically and never counted as "no match". |
 
@@ -167,7 +167,7 @@ Any change starts the 60 seconds again. After a restart of Emby every album also
 | No match | Nothing on MusicBrainz fits | Stays in the inbox for you |
 | Ready | Dry run: it would have been applied | Nothing is touched; switch dry run off and the next check (or **Check inbox now**) files it by itself, by the same rules as any new album |
 | Done | Tagged and moved into the library | Finished (it can be undone) |
-| Duplicate | A file with that name is already in the library | Nothing is written; you choose |
+| Duplicate | A file with that name is already in the library | Nothing is written; you choose keep both or replace (section 8e) |
 | Failed | Something went wrong (a damaged file, the library folder not reachable) | Fix the cause; it is checked again when the folder changes |
 | Skipped | The album was taken out of the inbox by hand | Finished |
 
@@ -220,3 +220,15 @@ Code: `CoverArt/CoverArtClient.cs`, `CoverArt/CoverArtFiller.cs`. Setting: **Set
 - **Sent.** Only the album's MusicBrainz release id, to `coverartarchive.org`. No file names, no folder names.
 - **Undo.** Undoing an album also removes the cover Label Maker added for it (never one that was there before).
 - **The Albums tab** says "Cover art added." at the end of the album's sentence when it happened.
+
+## 8e. Files that are already in the library: keep both, or replace (built 2026-11-02)
+Code: `Pipeline/Planner.cs` (`DuplicatePolicy`), `Pipeline/Applier.cs` (`BackUpReplaced`, `RestoreReplaced`), the review panel on the Albums tab.
+- **The default has not changed.** When a file with the planned name is already in the library, Label Maker writes nothing and the album waits as *Already in library*. It never chooses for you, and an automatic pass never uses either choice below.
+- **How you choose.** Albums tab, open the album, press **See what is already in the library**. The preview lists every file, says which ones are already there, and shows the size of the library copy next to the size of yours (a much bigger file is usually the better recording). Then press **Keep both** or **Replace the old files**; the preview updates, and the button at the bottom files the album.
+- **Keep both.** Only the files that collide get a number after their names ("1-02 Brat (2).mp3", then "(3)" if that is taken too; a lyrics file follows its track). Files that do not collide keep their normal names, and nothing in the library is touched. Emby will list both tracks.
+- **Replace.** Every old file that would be overwritten (and its lyrics file, when the new track brings one) is first moved into the inbox, in `_Replaced/<album id>/` with the same folders as in the library. Only after every new file has been tagged and every old file is safe there do the new files move in. Nothing is deleted, and Label Maker never looks inside `_Replaced` (a folder whose name starts with an underscore is ignored, like `_Trash`).
+- **Undo** works for both. For keep both it removes the numbered copies and leaves the old files alone. For replace it moves the new files back to the inbox, puts the old files back where they were and removes the empty `_Replaced` folders. If you deleted the saved old files yourself, Undo stops before it moves anything and says so, so the library never loses a track.
+- **A crash in the middle** is finished from the album's record on the next check, as for any album.
+
+## 8f. Tracks that arrive later in a folder that was already filed (fixed 2026-11-02)
+MusicGrabber downloads track by track, so more tracks of an album can land in the same inbox folder after the first ones were filed. Versions up to 0.1.7.0 treated them as "already applied" and left them in the inbox while showing the album as filed. Now they are matched and filed like any new album (a later batch). Each batch keeps its own undo record: **Undo puts back only the latest batch, and a second Undo (after filing it again) steps back to the one before.** An album that an older version marked as filed while its tracks were still in the inbox is checked again by itself on the next pass.

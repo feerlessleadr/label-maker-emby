@@ -338,6 +338,28 @@ try {
   Check 'An Applied alert was pushed' (@($m4 | Where-Object { $_.MessageType -eq 'LabelMaker.AutoApplied' -and $_.Data.Mode -eq 'Applied' }).Count -eq 1) (($m4 | ForEach-Object { $_.MessageType }) -join ',')
   Check 'The inbox was tidied' ((Count-Mp3 $inbox) -eq 0)
 
+  Write-Host '-- files already in the library: keep both, replace, and undo'
+  Add-Album $inbox 'Green Day'
+  Run-Pass; Start-Sleep 12; Run-Pass
+  $okDup = WaitUntil { (Count-Of 'Duplicate') -eq 1 } 120
+  Check 'An album whose files are already in the library waits as a duplicate' $okDup ((Status).Counts | ConvertTo-Json -Compress)
+  $dup = (Api GET '/LabelMaker/Albums?State=Duplicate').Items[0]
+  $p0 = Api POST "/LabelMaker/Albums/$($dup.Id)/Preview" @{ ReleaseId = $dup.BestReleaseId }
+  Check 'The plain preview refuses and says how many files are already there' ($p0.IsDuplicate -and -not $p0.CanApply -and $p0.DuplicateCount -eq 2) ($p0 | ConvertTo-Json -Compress -Depth 3)
+  $p1 = Api POST "/LabelMaker/Albums/$($dup.Id)/Preview" @{ ReleaseId = $dup.BestReleaseId; OnDuplicate = 'KeepBoth' }
+  Check 'The keep-both preview numbers both new copies and can be applied' ($p1.CanApply -and @($p1.Notes).Count -eq 2 -and @($p1.Files | Where-Object { $_.Destination -match '\(2\)' }).Count -eq 2) ($p1 | ConvertTo-Json -Compress -Depth 3)
+  $bad = TryApi POST "/LabelMaker/Albums/$($dup.Id)/Preview" @{ ReleaseId = $dup.BestReleaseId; OnDuplicate = 'overwrite' }
+  Check 'An unknown duplicate choice is refused' (-not $bad.Ok)
+  $a1 = Api POST "/LabelMaker/Albums/$($dup.Id)/Apply" @{ ReleaseId = $dup.BestReleaseId; OnDuplicate = 'KeepBoth' }
+  Check 'Keep both files the new copies next to the old ones' ($a1.Success -and (Count-Mp3 $library) -eq 4 -and (Count-Mp3 $inbox) -eq 0) ([string]$a1.Message)
+  $u1 = Api POST "/LabelMaker/Albums/$($dup.Id)/Undo"
+  Check 'Undo removes only the new copies' ($u1.Success -and (Count-Mp3 $library) -eq 2 -and (Count-Mp3 $inbox) -eq 2) ([string]$u1.Message)
+  $a2 = Api POST "/LabelMaker/Albums/$($dup.Id)/Apply" @{ ReleaseId = $dup.BestReleaseId; OnDuplicate = 'Replace' }
+  Check 'Replace files the new files in place and saves the old ones aside' ($a2.Success -and (Count-Mp3 $library) -eq 2 -and (Count-Mp3 (Join-Path $inbox '_Replaced')) -eq 2) ([string]$a2.Message)
+  $u2 = Api POST "/LabelMaker/Albums/$($dup.Id)/Undo"
+  Check 'Undo puts the old files back and removes the _Replaced folder' ($u2.Success -and (Count-Mp3 $library) -eq 2 -and (Count-Mp3 $inbox) -eq 2 -and -not (Test-Path (Join-Path $inbox '_Replaced'))) ([string]$u2.Message)
+  $null = Api POST "/LabelMaker/Albums/$($dup.Id)/Discard"
+
   Write-Host '-- the subscription again: heartbeat, replay, and the token never leaks'
   $heartbeats = New-Object System.Collections.ArrayList
   [void]$heartbeats.AddRange(@(Read-App $app 38 | Where-Object { @($_.Events).Count -eq 0 -and -not $_.Error }))

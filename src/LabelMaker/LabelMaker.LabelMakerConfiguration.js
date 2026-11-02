@@ -39,6 +39,12 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
         return words + ' (' + score.toFixed(2) + ')';
     }
 
+    function formatBytes(bytes) {
+        if (!bytes) { return 'empty'; }
+        if (bytes >= 1048576) { return (bytes / 1048576).toFixed(1) + ' MB'; }
+        return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+    }
+
     function slug(text) {
         return (text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 30);
     }
@@ -277,7 +283,7 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
             if (a.Discarded) { add('Restore from the trash', () => this.act(a.Id, 'Restore')); }
             else if (a.State === 'Done') { add('Undo (put it back in the inbox)', () => this.act(a.Id, 'Undo', 'Put every file back in the inbox with its old tags and names?')); }
             else if (!busy) {
-                if (a.BestReleaseId && a.State !== 'Duplicate') { add('Use the best match', () => this.preview(a.BestReleaseId, null), true); }
+                if (a.BestReleaseId) { add(a.State === 'Duplicate' ? 'See what is already in the library' : 'Use the best match', () => this.preview(a.BestReleaseId, null, ''), true); }
                 add('Keep my tags and file it', () => this.act(a.Id, 'KeepTags', 'File this album using the tags already in the files, unchanged?'));
                 if (/holds \d+ different albums/.test(a.Reason || '')) { add('Split by album', () => this.act(a.Id, 'Split', 'Put each album in a folder of its own inside this folder?')); }
                 add('Skip for now', () => this.act(a.Id, 'Skip'));
@@ -381,11 +387,12 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
             box.appendChild(this.candidateTable(r.Candidates, 'What was found'));
         }
 
-        preview(releaseId, mapping) {
+        preview(releaseId, mapping, policy) {
             const id = this.openAlbum.Id;
             this.previewRelease = releaseId;
+            this.previewPolicy = policy || '';
             loading.show();
-            postJson('LabelMaker/Albums/' + encodeURIComponent(id) + '/Preview', { ReleaseId: releaseId, Mapping: mapping || [] }).then((p) => {
+            postJson('LabelMaker/Albums/' + encodeURIComponent(id) + '/Preview', { ReleaseId: releaseId, Mapping: mapping || [], OnDuplicate: this.previewPolicy }).then((p) => {
                 loading.hide();
                 this.renderPreview(p, mapping);
             }).catch(() => { loading.hide(); toast({ type: 'error', text: 'The preview did not finish.' }); });
@@ -400,9 +407,21 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
             box.appendChild(el('h4', '', 'If you use \u201C' + p.Title + '\u201D by ' + p.Artist + ' (' + [p.Country, p.Date].filter(Boolean).join(' ') + ')'));
             box.appendChild(el('div', 'lm-small', 'Fit: ' + scoreWords(p.Score) + '. ' + (p.Destination ? 'It would go into the library folder \u201C' + p.Destination + '\u201D.' : '')));
             (p.Problems || []).forEach(x => box.appendChild(el('div', 'lm-bad', x)));
+            (p.Notes || []).forEach(x => box.appendChild(el('div', 'lm-note', x)));
+            const policy = this.previewPolicy || '';
+            if (p.DuplicateCount > 0) {
+                box.appendChild(el('div', 'lm-small', p.DuplicateCount + (p.DuplicateCount === 1 ? ' file has' : ' files have') + ' the same name as a file already in the library. Nothing is changed until you choose, and Undo works for both choices.'));
+                const choices = el('div', 'lm-row');
+                const both = el('button', 'raised emby-button' + (policy === 'KeepBoth' ? ' button-submit' : ''), 'Keep both (number the new copies)'); both.type = 'button';
+                both.addEventListener('click', () => this.preview(this.previewRelease, this.currentMapping(), 'KeepBoth'));
+                const replace = el('button', 'raised emby-button' + (policy === 'Replace' ? ' button-submit' : ''), 'Replace the old files (they are kept aside)'); replace.type = 'button';
+                replace.addEventListener('click', () => this.preview(this.previewRelease, this.currentMapping(), 'Replace'));
+                choices.appendChild(both); choices.appendChild(replace);
+                box.appendChild(choices);
+            }
             const t = el('table', 'lm-table');
             const h = el('tr');
-            ['Your file', 'Disc', 'Track', 'Track on the edition', 'Would be named', 'Fit'].forEach(x => h.appendChild(el('th', '', x)));
+            ['Your file', 'Disc', 'Track', 'Track on the edition', 'Would be named', 'Fit', 'Already in the library'].forEach(x => h.appendChild(el('th', '', x)));
             t.appendChild(h);
             this.previewRows = [];
             (p.Files || []).forEach((f) => {
@@ -415,6 +434,7 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
                 r.appendChild(el('td', '', f.Title));
                 r.appendChild(el('td', 'lm-small', f.Destination));
                 const fit = el('td'); fit.appendChild(f.Weak ? pill('Warning', 'Does not fit') : el('span', 'lm-good', f.Score.toFixed(2))); r.appendChild(fit);
+                r.appendChild(el('td', 'lm-small', f.Existing ? 'Yes: the library copy is ' + formatBytes(f.ExistingBytes) + ', yours is ' + formatBytes(f.NewBytes) + '.' : ''));
                 t.appendChild(r);
                 this.previewRows.push({ file: f.Source, disc: disc, pos: pos, origDisc: String(f.Disc || ''), origPos: String(f.Position || '') });
             });
@@ -422,12 +442,18 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
             box.appendChild(el('div', 'lm-note', 'A file in the wrong place? Change its disc and track number, then press \u201CUpdate the preview\u201D.'));
             const row = el('div', 'lm-row');
             const update = el('button', 'raised emby-button', 'Update the preview'); update.type = 'button';
-            update.addEventListener('click', () => this.preview(this.previewRelease, this.currentMapping()));
-            const apply = el('button', 'raised emby-button button-submit', 'File the album with this edition'); apply.type = 'button';
+            update.addEventListener('click', () => this.preview(this.previewRelease, this.currentMapping(), policy));
+            const applyLabel = policy === 'KeepBoth' ? 'File the album and keep both copies' : policy === 'Replace' ? 'File the album and replace the old files' : 'File the album with this edition';
+            const apply = el('button', 'raised emby-button button-submit', applyLabel); apply.type = 'button';
             apply.disabled = !p.CanApply;
             apply.addEventListener('click', () => {
-                if (!window.confirm('Tag the files with this edition and move them into your library? You can undo it afterwards.')) { return; }
-                this.apply(this.previewRelease, this.currentMapping());
+                const question = policy === 'Replace'
+                    ? 'Tag the files, move them into your library and replace the files that are already there? The old files are saved in the _Replaced folder of the inbox, and Undo puts them back.'
+                    : policy === 'KeepBoth'
+                        ? 'Tag the files and move them into your library, keeping the files that are already there? The new copies get a number after their names. You can undo it afterwards.'
+                        : 'Tag the files with this edition and move them into your library? You can undo it afterwards.';
+                if (!window.confirm(question)) { return; }
+                this.apply(this.previewRelease, this.currentMapping(), policy);
             });
             row.appendChild(update); row.appendChild(apply);
             box.appendChild(row);
@@ -439,10 +465,10 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
                 .map(r => ({ File: r.file, Disc: parseInt(r.disc.value, 10), Position: parseInt(r.pos.value, 10) }));
         }
 
-        apply(releaseId, mapping) {
+        apply(releaseId, mapping, policy) {
             const id = this.openAlbum.Id;
             loading.show();
-            postJson('LabelMaker/Albums/' + encodeURIComponent(id) + '/Apply', { ReleaseId: releaseId, Mapping: mapping || [] }).then((r) => {
+            postJson('LabelMaker/Albums/' + encodeURIComponent(id) + '/Apply', { ReleaseId: releaseId, Mapping: mapping || [], OnDuplicate: policy || '' }).then((r) => {
                 loading.hide();
                 toast({ type: r.Success ? 'info' : 'error', text: r.Message || (r.Success ? 'Filed.' : 'Not filed.') });
                 if (r.Success) { this.closeDetail(); }

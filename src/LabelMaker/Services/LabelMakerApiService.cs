@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LabelMaker.Core.Engine;
 using LabelMaker.Core.Notifications;
 using LabelMaker.Core.Review;
 using MediaBrowser.Controller.Net;
@@ -105,6 +106,9 @@ public class LmPreviewAlbumRequest : IReturn<object>
 	public string ReleaseId { get; set; }
 
 	public MappingDto[] Mapping { get; set; }
+
+	/// <summary>Empty (the default: nothing is written when a file of that name is already in the library), "KeepBoth" (the new file gets a number after its name) or "Replace" (the old file is saved in the inbox's _Replaced folder first).</summary>
+	public string OnDuplicate { get; set; }
 }
 
 [Authenticated(Roles = "Admin")]
@@ -116,6 +120,9 @@ public class LmApplyAlbumRequest : IReturn<object>
 	public string ReleaseId { get; set; }
 
 	public MappingDto[] Mapping { get; set; }
+
+	/// <summary>Empty (the default: nothing is written when a file of that name is already in the library), "KeepBoth" (the new file gets a number after its name) or "Replace" (the old file is saved in the inbox's _Replaced folder first).</summary>
+	public string OnDuplicate { get; set; }
 }
 
 [Authenticated(Roles = "Admin")]
@@ -253,9 +260,9 @@ public class LabelMakerApiService : IService
 
 	public object Get(LmAlbumRequest request) => (object)Engine.Album(request.Id) ?? throw new ArgumentException("That album is not in the list (any more).");
 
-	public object Post(LmPreviewAlbumRequest request) => Engine.PreviewAsync(request.Id, request.ReleaseId, Map(request.Mapping)).GetAwaiter().GetResult();
+	public object Post(LmPreviewAlbumRequest request) => Engine.PreviewAsync(request.Id, request.ReleaseId, Map(request.Mapping), default, LabelMakerEngine.PolicyFrom(request.OnDuplicate)).GetAwaiter().GetResult();
 
-	public object Post(LmApplyAlbumRequest request) => Engine.ApplyAsync(request.Id, request.ReleaseId, Map(request.Mapping)).GetAwaiter().GetResult();
+	public object Post(LmApplyAlbumRequest request) => Engine.ApplyAsync(request.Id, request.ReleaseId, Map(request.Mapping), default, LabelMakerEngine.PolicyFrom(request.OnDuplicate)).GetAwaiter().GetResult();
 
 	public object Post(LmSearchAlbumRequest request) => Engine.SearchAsync(request.Id, request.Artist ?? string.Empty, request.Album ?? string.Empty).GetAwaiter().GetResult();
 
