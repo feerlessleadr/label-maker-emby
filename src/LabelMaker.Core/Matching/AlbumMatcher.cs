@@ -193,13 +193,8 @@ namespace LabelMaker.Core.Matching
             var album = ReleaseVerifier.MostCommon(files.Select(f => f.Tags.Album));
             if (artist.Length == 0 && info != null) artist = info.Artist;
             if (album.Length == 0 && info != null) album = info.Album;
-            if (album.Length == 0)
-            {
-                notes.Add("the files have no album name");
-                var none = Finish(candidates, source, "These files have no album name to search for.");
-                none.Notes = notes;
-                return none;
-            }
+            bool hasAlbum = album.Length > 0;
+            if (!hasAlbum) notes.Add("the files have no album name, so the song titles are searched instead");
 
             // The exact "album AND artist" search is precise but often finds nothing, so it is tried first and the looser searches follow, each
             // with the album name as it is (noise such as "[FLAC]" removed), then without any trailing "(...)", then with 2 and II swapped.
@@ -210,7 +205,7 @@ namespace LabelMaker.Core.Matching
             int attempts = 0;
             const int MaxSearches = 8;
             bool enough = false;
-            foreach (var variant in AlbumNameVariants(album))
+            foreach (var variant in hasAlbum ? AlbumNameVariants(album) : Array.Empty<string>())
             {
                 foreach (var shape in SearchShapes(artist))
                 {
@@ -251,14 +246,42 @@ namespace LabelMaker.Core.Matching
                 }
                 if (enough || attempts >= MaxSearches) break;
             }
+            // 3. The album name led nowhere (wrong, missing or "Unknown Album"): look for the songs themselves. Albums found this way go to review.
+            var titleGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!candidates.Any(c => c.Score >= _settings.ReviewThreshold))
+            {
+                var found = await TrackTitleSearch.FindAsync(_musicBrainz, files, artist, _settings.MaxReleaseGroups, notes, cancellation).ConfigureAwait(false);
+                foreach (var group in found)
+                {
+                    if (!browsed.Add(group.Id)) continue;
+                    var releases = await _musicBrainz.BrowseOfficialReleasesAsync(group.Id, cancellation).ConfigureAwait(false);
+                    notes.Add($"\"{group.Title}\" by {group.ArtistCredit} holds {group.Votes} of the searched songs and has {releases.Count} official edition(s)");
+                    foreach (var release in releases)
+                    {
+                        if (candidates.Any(c => string.Equals(c.Release.Id, release.Id, StringComparison.OrdinalIgnoreCase))) continue;
+                        candidates.Add(ReleaseVerifier.Verify(release, files, _settings.MinFileScore));
+                    }
+                    titleGroups.Add(group.Id);
+                }
+            }
+
             if (candidates.Count > 0)
             {
                 var top = candidates.OrderByDescending(c => c.Score).First();
                 notes.Add($"best edition checked: \"{top.Release.Title}\" by {top.Release.ArtistCredit} ({top.Release.Country} {top.Release.Date}), score {top.Score:0.00}, tracks {top.TrackScore:0.00}, {top.WeakFiles} weak file(s)");
             }
 
-            var result = Finish(candidates, source, "No release was found for this album.");
+            var result = Finish(candidates, source, hasAlbum ? "No release was found for this album." : "These files have no album name, and their song titles led nowhere either.");
             result.Notes = notes;
+
+            // An album found only by its song titles is never applied without a person looking, however well the tracks fit.
+            if (result.Best != null && result.Outcome != MatchOutcome.NoMatch && titleGroups.Contains(result.Best.Release.ReleaseGroupId))
+            {
+                const string how = "Found by searching for the song titles, because the album name in the tags led nowhere, so please check it.";
+                result.Source = "titles";
+                result.Reason = result.Outcome == MatchOutcome.Auto || result.Reason == "The best match is only probable." ? how : how + " " + result.Reason;
+                result.Outcome = MatchOutcome.NeedsReview;
+            }
 
             // An album found only through the relaxed passes (MusicBrainz lists it under another name or artist than the tags say) is never
             // applied without a person looking, however well the tracks fit.

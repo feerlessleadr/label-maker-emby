@@ -66,12 +66,14 @@ namespace LabelMaker.Calibrate
             var editionRule = EditionRule.SameRecordings;
             var inputs = new List<string>();
             string noIdOut = string.Empty;
+            string only = string.Empty;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--cache") cache = args[++i];
                 else if (args[i] == "--out") report = args[++i];
                 else if (args[i] == "--limit") limit = int.Parse(args[++i], CultureInfo.InvariantCulture);
                 else if (args[i] == "--noid-out") noIdOut = args[++i];
+                else if (args[i] == "--only") only = args[++i];
                 else if (args[i] == "--editions") editionRule = args[++i] == "titles" ? EditionRule.SameTitles : EditionRule.SameRecordings;
                 else inputs.Add(args[i]);
             }
@@ -105,7 +107,11 @@ namespace LabelMaker.Calibrate
                 ("MusicGrabber hint, wrong release id", (a, t) => t, a => Hint(a, WrongId(a)), false),
                 ("release id in the tags, right", (a, t) => Clone(t, releaseMbid: a.TruthId), a => null, false),
                 ("release id in the tags, wrong", (a, t) => Clone(t, releaseMbid: WrongId(a)), a => null, false),
+                ("album name \"Unknown Album\" (song titles are searched)", (a, t) => Clone(t, album: "Unknown Album"), a => null, false),
+                ("album name missing (song titles are searched)", (a, t) => Clone(t, album: string.Empty), a => null, false),
+                ("single track, album name \"Unknown Album\"", (a, t) => Clone(t, album: "Unknown Album"), a => null, true),
             };
+            if (only.Length > 0) scenarios = scenarios.Where(s => s.Name.IndexOf(only, StringComparison.OrdinalIgnoreCase) >= 0).ToArray();
 
             var truthCache = new Dictionary<string, ReleaseInfo?>();
             var rows = new List<Row>();
@@ -352,6 +358,15 @@ namespace LabelMaker.Calibrate
             foreach (var r in rows.Where(r => r.Scenario == "tags as they are" && r.Outcome == "NeedsReview" && r.Correct).Take(40))
             {
                 sb.AppendLine($"- \"{r.Artist} - {r.AlbumName}\" ({r.Files} file(s), score {r.Score:0.000}): {r.Reason}");
+            }
+            sb.AppendLine();
+
+            sb.AppendLine("## Sent to review where the best match was not the library's release, song-title scenarios (first 40)");
+            sb.AppendLine();
+            foreach (var r in rows.Where(r => r.Scenario.Contains("song titles") && r.Outcome == "NeedsReview" && !r.Correct).Take(40))
+            {
+                sb.AppendLine($"- [{r.Scenario}] \"{r.Artist} - {r.AlbumName}\" ({r.Files} file(s)): best \"{r.BestTitle}\" (score {r.Score:0.000}); library says \"{r.TruthTitle}\" ({r.TruthStatus}), scored {r.TruthScore:0.000} with {r.TruthWeak} weak file(s), among the candidates: {(r.TruthInCandidates ? "yes" : "no")}");
+                sb.AppendLine($"    - {r.Notes}");
             }
             sb.AppendLine();
 

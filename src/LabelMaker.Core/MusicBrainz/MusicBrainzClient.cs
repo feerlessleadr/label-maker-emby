@@ -90,8 +90,36 @@ namespace LabelMaker.Core.MusicBrainz
     }
 
     /// <summary>What the matcher needs from MusicBrainz. The tests use a fake; the plugin uses <see cref="MusicBrainzClient"/>.</summary>
+    /// <summary>One release (an edition) that a recording appears on, as a recording search lists it.</summary>
+    public sealed class RecordingRelease
+    {
+        public string ReleaseId { get; set; } = string.Empty;
+        public string ReleaseTitle { get; set; } = string.Empty;
+        public string ReleaseGroupId { get; set; } = string.Empty;
+        public string ReleaseGroupTitle { get; set; } = string.Empty;
+        public string PrimaryType { get; set; } = string.Empty;
+        public List<string> SecondaryTypes { get; } = new List<string>();
+    }
+
+    /// <summary>One result of a recording (song) search: the song, its credited artist and the releases it is on.</summary>
+    public sealed class RecordingHit
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        public string ArtistCredit { get; set; } = string.Empty;
+
+        /// <summary>MusicBrainz's own search score, 0 to 100.</summary>
+        public int Score { get; set; }
+
+        public List<RecordingRelease> Releases { get; } = new List<RecordingRelease>();
+    }
+
     public interface IMusicBrainz
     {
+        /// <summary>Songs with this title (by this artist when given), each with the releases it appears on. Used when the album name led nowhere.</summary>
+        Task<IReadOnlyList<RecordingHit>> SearchRecordingsAsync(string artist, string title, int limit, CancellationToken cancellation = default) =>
+            Task.FromResult<IReadOnlyList<RecordingHit>>(Array.Empty<RecordingHit>());
+
         Task<ReleaseInfo?> LookupReleaseAsync(string releaseId, CancellationToken cancellation = default);
 
         Task<IReadOnlyList<ReleaseGroupHit>> SearchReleaseGroupsAsync(string artist, string album, int limit, SearchShape shape, CancellationToken cancellation = default);
@@ -183,6 +211,55 @@ namespace LabelMaker.Core.MusicBrainz
             var url = $"{_baseUrl}/release-group?query={Uri.EscapeDataString(query)}&fmt=json&limit={Math.Max(1, Math.Min(limit, 25))}";
             var body = await GetWithRetriesAsync(url, cancellation).ConfigureAwait(false);
             return body == null ? Array.Empty<ReleaseGroupHit>() : ParseReleaseGroupSearch(body);
+        }
+
+        public async Task<IReadOnlyList<RecordingHit>> SearchRecordingsAsync(string artist, string title, int limit, CancellationToken cancellation = default)
+        {
+            var cleanTitle = CleanForQuery(title);
+            var cleanArtist = CleanForQuery(artist);
+            if (cleanTitle.Length == 0) return Array.Empty<RecordingHit>();
+            var query = "recording:\"" + LuceneEscape(cleanTitle) + "\"";
+            if (cleanArtist.Length > 0) query += " AND artist:\"" + LuceneEscape(cleanArtist) + "\"";
+            query += " AND status:official";
+            var url = $"{_baseUrl}/recording?query={Uri.EscapeDataString(query)}&fmt=json&limit={Math.Max(1, Math.Min(limit, 25))}";
+            var body = await GetWithRetriesAsync(url, cancellation).ConfigureAwait(false);
+            return body == null ? Array.Empty<RecordingHit>() : ParseRecordingSearch(body);
+        }
+
+        public static IReadOnlyList<RecordingHit> ParseRecordingSearch(string json)
+        {
+            var list = new List<RecordingHit>();
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("recordings", out var recordings) && recordings.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var r in recordings.EnumerateArray())
+                {
+                    var hit = new RecordingHit { Id = Text(r, "id"), Title = Text(r, "title"), ArtistCredit = Credit(r), Score = Int(r, "score") ?? 0 };
+                    if (r.TryGetProperty("releases", out var releases) && releases.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var rel in releases.EnumerateArray())
+                        {
+                            var item = new RecordingRelease { ReleaseId = Text(rel, "id"), ReleaseTitle = Text(rel, "title") };
+                            if (rel.TryGetProperty("release-group", out var group) && group.ValueKind == JsonValueKind.Object)
+                            {
+                                item.ReleaseGroupId = Text(group, "id");
+                                item.ReleaseGroupTitle = Text(group, "title");
+                                item.PrimaryType = Text(group, "primary-type");
+                                if (group.TryGetProperty("secondary-types", out var secondary) && secondary.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var s in secondary.EnumerateArray())
+                                    {
+                                        if (s.ValueKind == JsonValueKind.String) item.SecondaryTypes.Add(s.GetString() ?? string.Empty);
+                                    }
+                                }
+                            }
+                            if (item.ReleaseGroupId.Length > 0) hit.Releases.Add(item);
+                        }
+                    }
+                    list.Add(hit);
+                }
+            }
+            return list;
         }
 
         public async Task<IReadOnlyList<ReleaseInfo>> BrowseOfficialReleasesAsync(string releaseGroupId, CancellationToken cancellation = default)

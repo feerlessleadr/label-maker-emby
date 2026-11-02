@@ -124,9 +124,28 @@ namespace LabelMaker.Core.Review
                         if (!found.ContainsKey(release.Id)) found[release.Id] = ReleaseVerifier.Verify(release, open.Context!.Files, _settings.MinFileScore);
                     }
                 }
+                bool byTitles = false;
+                if (!found.Values.Any(v => v.Score >= _settings.ReviewThreshold))
+                {
+                    // Nothing under that name fits the files: look for the songs themselves.
+                    var titleNotes = new List<string>();
+                    foreach (var group in await TrackTitleSearch.FindAsync(_musicBrainz, open.Context!.Files, artist.Trim(), _settings.MaxReleaseGroups, titleNotes, cancellation).ConfigureAwait(false))
+                    {
+                        foreach (var release in await _musicBrainz.BrowseOfficialReleasesAsync(group.Id, cancellation).ConfigureAwait(false))
+                        {
+                            if (!found.ContainsKey(release.Id))
+                            {
+                                found[release.Id] = ReleaseVerifier.Verify(release, open.Context!.Files, _settings.MinFileScore);
+                                byTitles = true;
+                            }
+                        }
+                    }
+                }
                 AddSorted(result, found.Values, 15);
                 result.Success = true;
-                result.Message = result.Candidates.Count == 0 ? "MusicBrainz has nothing under that name. Try fewer words, or paste a MusicBrainz link." : string.Empty;
+                result.Message = result.Candidates.Count == 0
+                    ? "MusicBrainz has nothing under that name, and the song titles found no album either. Try fewer words, or paste a MusicBrainz link."
+                    : byTitles ? "Nothing under that name fits the files, so these albums were found by searching for the song titles." : string.Empty;
             }
             catch (MusicBrainzUnavailableException e)
             {

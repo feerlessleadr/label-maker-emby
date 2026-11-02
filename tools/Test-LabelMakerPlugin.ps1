@@ -360,6 +360,34 @@ try {
   Check 'Undo puts the old files back and removes the _Replaced folder' ($u2.Success -and (Count-Mp3 $library) -eq 2 -and (Count-Mp3 $inbox) -eq 2 -and -not (Test-Path (Join-Path $inbox '_Replaced'))) ([string]$u2.Message)
   $null = Api POST "/LabelMaker/Albums/$($dup.Id)/Discard"
 
+  Write-Host '-- an album name that leads nowhere: the song titles are searched'
+  $mystery = Join-Path $inbox 'Albums\Green Day\Mystery Download'
+  New-Item -ItemType Directory -Force $mystery | Out-Null
+  $fixture = Join-Path $repo 'tests\LabelMaker.Tests\Fixtures\silence.mp3'
+  foreach ($t in @(@('02 - Brat.mp3', 'Brat', 2), @('07 - 86.mp3', '86', 7))) {
+    Copy-Item $fixture (Join-Path $mystery $t[0]); Tag-Mp3 (Join-Path $mystery $t[0]) $t[1] $t[2]
+    $f = [TagLib.File]::Create((Join-Path $mystery $t[0])); $f.Tag.Album = 'Unknown Album'; $f.Save(); $f.Dispose()
+  }
+  # MusicBrainz sometimes answers "busy" for longer than the plugin waits; the plugin then leaves the album waiting. Ask again up to three times.
+  $okMystery = $false; $busyAll = $false
+  for ($round = 1; $round -le 3 -and -not $okMystery; $round++) {
+    Run-Pass; Start-Sleep 12; Run-Pass
+    $okMystery = WaitUntil { @((Api GET '/LabelMaker/Albums?State=NeedsReview').Items | Where-Object { $_.Folder -match 'Mystery Download' }).Count -eq 1 } 100
+    if (-not $okMystery) {
+      $w = @((Api GET '/LabelMaker/Albums?Limit=50').Items | Where-Object { $_.Folder -match 'Mystery Download' })
+      $busyAll = ($w.Count -eq 1 -and $w[0].Reason -match 'stayed busy|could not be reached')
+      if ($busyAll) { $null = Api POST "/LabelMaker/Albums/$($w[0].Id)/Recheck" } else { break }
+    }
+  }
+  $m = @((Api GET '/LabelMaker/Albums?State=NeedsReview').Items | Where-Object { $_.Folder -match 'Mystery Download' })
+  if (-not $okMystery -and $busyAll) {
+    Write-Host '  skip The song-title checks: MusicBrainz stayed busy in all three tries (not counted as a pass or a failure)'
+  } else {
+    Check 'An album called Unknown Album is found by its song titles and goes to review, not to the library' ($okMystery -and $m[0].Reason -match 'Found by searching for the song titles' -and (Count-Mp3 $library) -eq 2) (($m | ConvertTo-Json -Compress -Depth 3))
+    Check 'Its best match is the album the songs are on' ($okMystery -and $m[0].BestTitle -eq 'Insomniac') ([string]$m[0].BestTitle)
+  }
+  if ($okMystery) { $null = Api POST "/LabelMaker/Albums/$($m[0].Id)/Discard" }
+
   Write-Host '-- the subscription again: heartbeat, replay, and the token never leaks'
   $heartbeats = New-Object System.Collections.ArrayList
   [void]$heartbeats.AddRange(@(Read-App $app 38 | Where-Object { @($_.Events).Count -eq 0 -and -not $_.Error }))

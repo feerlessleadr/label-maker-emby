@@ -34,6 +34,9 @@ namespace LabelMaker.Core.MusicBrainz
         public Task<IReadOnlyList<ReleaseGroupHit>> SearchReleaseGroupsAsync(string artist, string album, int limit, SearchShape shape, CancellationToken cancellation = default) =>
             Watch(() => _inner.SearchReleaseGroupsAsync(artist, album, limit, shape, cancellation));
 
+        public Task<IReadOnlyList<RecordingHit>> SearchRecordingsAsync(string artist, string title, int limit, CancellationToken cancellation = default) =>
+            Watch(() => _inner.SearchRecordingsAsync(artist, title, limit, cancellation));
+
         public Task<IReadOnlyList<ReleaseInfo>> BrowseOfficialReleasesAsync(string releaseGroupId, CancellationToken cancellation = default) =>
             Watch(() => _inner.BrowseOfficialReleasesAsync(releaseGroupId, cancellation));
 
