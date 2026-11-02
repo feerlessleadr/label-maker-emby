@@ -666,9 +666,14 @@ define(['baseView', 'loading', 'toast', 'emby-input', 'emby-button', 'emby-selec
         onResume(options) {
             super.onResume(options);
             this.refreshStatus();
-            this.pollTimer = setInterval(() => {
-                if (!this.view.querySelector('#lmDashPage').classList.contains('hide')) { this.refreshStatus(); }
+            if (this.pollTimer) { clearInterval(this.pollTimer); }
+            const timer = setInterval(() => {
+                // A timer left behind by a page Emby has already thrown away stops itself.
+                const dash = this.view ? this.view.querySelector('#lmDashPage') : null;
+                if (!dash) { clearInterval(timer); return; }
+                if (!dash.classList.contains('hide')) { this.refreshStatus(); }
             }, 5000);
+            this.pollTimer = timer;
         }
 
         onPause() {
