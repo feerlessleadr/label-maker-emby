@@ -181,7 +181,7 @@ Any change starts the 60 seconds again. After a restart of Emby every album also
 
 **If the inbox cannot be reached** (a network share drops): nothing is marked gone and nothing is lost; the albums are picked up again when it comes back.
 
-**Not built yet.** Splitting a folder that holds several different albums (it goes to review with that reason instead) and spotting classical music, audiobooks and podcasts.
+**Built since:** splitting a folder that holds several different albums (the review screen's "Split by album") and spotting classical music, audiobooks and podcasts (section 8i).
 
 ## 8c. Lane rules, the health check and the memory of MusicBrainz answers
 Status: built in the engine (2026-10-14); the settings page that shows them comes with the plugin. (Code: `Inbox/LaneValidator.cs`, `Pipeline/Preflight.cs`, `MusicBrainz/ResponseCache.cs`.)
@@ -252,3 +252,15 @@ Code: `DuplicatePolicy.SkipExisting` in `Pipeline/Planner.cs`, `SetAsideDuplicat
 - **Undo.** Puts the filed files back in the inbox with their old tags, moves the set-aside files back to where they were, and removes the empty `_Duplicates` folders. The library copies that were already there are never touched.
 - **If every file is already in the library** there is nothing new to file: the choice is not offered, and the preview says so. Use *Discard* if you do not need the files.
 - **A crash in the middle** is finished from the album's record on the next check.
+
+## 8i. Classical music, audiobooks and podcasts (built 2026-11-02)
+Code: `Matching/MediaKindDetector.cs`, the step after matching in `Pipeline/AlbumProcessor.cs`.
+- **Why.** Label Maker matches songs on albums. Classical music is named by work and movement, so MusicBrainz's titles and the files' titles often differ and one wrong guess spreads over many files; audiobooks and podcasts are hardly on MusicBrainz at all. These are the albums where a confident-looking match is most likely to be wrong.
+- **What is recognized** (the first rule that fits wins; each counts when it holds for at least half of the files):
+  - *Podcast:* the genre tag says "Podcast", or the album name says "podcast".
+  - *Audiobook:* the genre tag says audiobook, audio book, spoken, speech, audio drama or Hörbuch; or **one file is longer than 90 minutes**; or at least three files and half of them have titles that start like a chapter ("Chapter", "Part", "Book", "Kapitel", "Prologue", "Epilogue" and a few other languages).
+  - *Classical:* the genre tag says classical, opera, baroque, orchestral, chamber music, symphony or choral; or at least two files and half of them have titles that name works and movements ("Symphony", "Concerto", "Sonata", "Op. 67", "BWV 1007", "Allegro", "Adagio", a Roman numeral such as "II." and similar words).
+  - The composer tag alone is **not** enough (songwriters are credited as composers too).
+- **What happens.** An album that is recognized is **never filed automatically**, even when the tracks fit one release perfectly: it goes to the review list with a sentence such as "This looks like classical music (the genre tag says "Classical"), which is named by work and movement rather than by song, so it needs your eye." When no match was found either, that sentence is put in front of the usual one. The album's notes say what was seen. Your own choices on the review screen still work as always.
+- **What is read.** The genre and composer tags (read only; Label Maker never writes them). Nothing new is sent anywhere.
+- **Measured.** On the 322 albums of the library exports (which have no genre tags, so only titles, album names and lengths counted) one album was recognized: a kids' collection with a file over 90 minutes. Genre-based recognition could not be measured; run `tools/Export-LibraryTags.ps1` again (it now writes genre and composer) and `tools/LabelMaker.Calibrate --media-only` to see which albums of a real library would be held for review.

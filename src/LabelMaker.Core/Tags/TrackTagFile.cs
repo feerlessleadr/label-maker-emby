@@ -46,6 +46,8 @@ namespace LabelMaker.Core.Tags
                 TotalDiscs = Positive(tag.DiscCount),
                 Year = Positive(tag.Year),
                 ReleaseMbid = tag.MusicBrainzReleaseId ?? string.Empty,
+                Genre = string.Join("; ", tag.Genres ?? Array.Empty<string>()),
+                Composer = string.Join("; ", tag.Composers ?? Array.Empty<string>()),
                 DurationMs = file.Properties != null && file.Properties.Duration.TotalMilliseconds > 0 ? (int)file.Properties.Duration.TotalMilliseconds : (int?)null,
             };
         }

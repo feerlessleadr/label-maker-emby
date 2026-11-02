@@ -5,10 +5,10 @@
 
 .DESCRIPTION
   Every folder that directly holds audio files counts as one album. The file holds, per track: title, artist, album artist,
-  album, track and disc numbers and totals, year, length, and the MusicBrainz release id when the file has one (the library's
+  album, track and disc numbers and totals, year, length, genre, composer, and the MusicBrainz release id when the file has one (the library's
   correct, Picard-tagged albums usually do, and that id is the answer Label Maker's matcher is checked against).
 
-  Privacy: the output has artist, album and track names from your library and nothing else. It has no file contents, no
+  Privacy: the output has artist, album, track, genre and composer names from your library and nothing else. It has no file contents, no
   absolute paths (only the folder path under the library root), no server or share names, and no account names.
 
 .EXAMPLE
@@ -71,6 +71,8 @@ foreach ($group in $sample) {
                     year         = Number $t.Year
                     durationMs   = [int]$tl.Properties.Duration.TotalMilliseconds
                     releaseMbid  = [string]$t.MusicBrainzReleaseId
+                    genre        = (@($t.Genres) -join '; ')
+                    composer     = (@($t.Composers) -join '; ')
                 })
             } finally { $tl.Dispose() }
         } catch {

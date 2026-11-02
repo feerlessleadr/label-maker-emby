@@ -31,5 +31,11 @@ namespace LabelMaker.Core.Models
 
         /// <summary>The audio length in milliseconds. Read from the file; never written.</summary>
         public int? DurationMs { get; set; }
+
+        /// <summary>The genre tag(s) joined with "; ". Read from the file to recognize classical music, audiobooks and podcasts; never written.</summary>
+        public string Genre { get; set; } = string.Empty;
+
+        /// <summary>The composer tag(s) joined with "; ". Read from the file; never written.</summary>
+        public string Composer { get; set; } = string.Empty;
     }
 }

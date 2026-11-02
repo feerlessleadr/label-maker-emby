@@ -67,6 +67,7 @@ namespace LabelMaker.Calibrate
             var inputs = new List<string>();
             string noIdOut = string.Empty;
             string only = string.Empty;
+            bool mediaOnly = false;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--cache") cache = args[++i];
@@ -74,12 +75,34 @@ namespace LabelMaker.Calibrate
                 else if (args[i] == "--limit") limit = int.Parse(args[++i], CultureInfo.InvariantCulture);
                 else if (args[i] == "--noid-out") noIdOut = args[++i];
                 else if (args[i] == "--only") only = args[++i];
+                else if (args[i] == "--media-only") mediaOnly = true;
                 else if (args[i] == "--editions") editionRule = args[++i] == "titles" ? EditionRule.SameTitles : EditionRule.SameRecordings;
                 else inputs.Add(args[i]);
             }
             if (inputs.Count == 0) { Console.Error.WriteLine("Give at least one export JSON file."); return 2; }
 
             var albums = inputs.SelectMany(LoadAlbums).ToList();
+            if (mediaOnly)
+            {
+                // No network: which albums of the exports would be recognized as classical music, an audiobook or a podcast.
+                var flagged = new List<string>();
+                foreach (var a in albums)
+                {
+                    var files = a.Tracks.Select((t, i) => new AlbumFile(a.Names[i], t)).ToList();
+                    var found = MediaKindDetector.Detect(files);
+                    if (found != null) flagged.Add($"- [{found.Kind}] \"{ReleaseVerifier.MostCommon(a.Tracks.Select(t => t.AlbumArtist.Length > 0 ? t.AlbumArtist : t.Artist))} - {ReleaseVerifier.MostCommon(a.Tracks.Select(t => t.Album))}\" ({files.Count} file(s)): {found.Evidence}");
+                }
+                bool hasGenre = albums.Any(a => a.Tracks.Any(t => t.Genre.Length > 0));
+                var text = new StringBuilder();
+                text.AppendLine("# Recognized as classical music, an audiobook or a podcast");
+                text.AppendLine();
+                text.AppendLine($"Albums in the exports: {albums.Count}. Recognized: {flagged.Count}. The exports {(hasGenre ? "have" : "have no")} genre tags{(hasGenre ? string.Empty : " (so only titles, album names and lengths were looked at; export again with the current Export-LibraryTags.ps1 to include genres)")}.");
+                text.AppendLine();
+                foreach (var line in flagged) text.AppendLine(line);
+                File.WriteAllText(report, text.ToString());
+                Console.WriteLine($"{albums.Count} albums; {flagged.Count} recognized. Report written to {report}");
+                return 0;
+            }
             var answered = albums.Where(a => a.TruthId.Length > 0).Take(limit).ToList();
             Console.WriteLine($"{albums.Count} albums loaded; {answered.Count} have one consistent MusicBrainz release id ({albums.Count(a => a.MixedIds)} mixed ids, {albums.Count(a => a.TruthId.Length == 0 && !a.MixedIds)} with none).");
 
@@ -230,7 +253,7 @@ namespace LabelMaker.Calibrate
                     {
                         Title = Str(t, "title"), Artist = Str(t, "artist"), AlbumArtist = Str(t, "albumArtist"), Album = Str(t, "album"),
                         TrackNumber = Num(t, "track"), TotalTracks = Num(t, "trackCount"), DiscNumber = Num(t, "disc"), TotalDiscs = Num(t, "discCount"),
-                        Year = Num(t, "year"), DurationMs = Num(t, "durationMs"),
+                        Year = Num(t, "year"), DurationMs = Num(t, "durationMs"), Genre = Str(t, "genre"), Composer = Str(t, "composer"),
                     });
                     var id = Str(t, "releaseMbid").Trim().ToLowerInvariant();
                     if (Guid.TryParse(id, out _)) ids.Add(id);

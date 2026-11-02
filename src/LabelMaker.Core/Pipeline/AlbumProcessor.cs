@@ -126,6 +126,23 @@ namespace LabelMaker.Core.Pipeline
             {
                 return new ProcessOutcome { State = QueueState.Waiting, Retry = true, Reason = e.Message };
             }
+            // Classical music, audiobooks and podcasts are never filed without a person looking, however well the tracks seem to fit.
+            var media = MediaKindDetector.Detect(files);
+            if (media != null)
+            {
+                var notes = match.Notes.ToList();
+                notes.Add("recognized as " + media.Kind.ToString().ToLowerInvariant() + ": " + media.Evidence);
+                match.Notes = notes;
+                if (match.Outcome == MatchOutcome.Auto)
+                {
+                    match.Outcome = MatchOutcome.NeedsReview;
+                    match.Reason = media.Sentence;
+                }
+                else
+                {
+                    match.Reason = media.Sentence + " " + match.Reason;
+                }
+            }
             var summary = Summarise(match);
 
             if (match.Outcome == MatchOutcome.NoMatch) return new ProcessOutcome { State = QueueState.NoMatch, Reason = match.Reason, Match = summary };
