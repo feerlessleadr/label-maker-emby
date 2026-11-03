@@ -11,7 +11,11 @@ An Emby Server plugin that watches your download folders, matches each new album
 - Tags the files (ID3v2.4, UTF-8, ID3v1 kept, like Picard's defaults), renames them with Picard's stock naming script, and moves the cover and `.lrc` lyric files with them.
 - **Undo** for every filed album; nothing is ever deleted (a discarded album goes to a `_Trash` folder inside its inbox).
 - **Folder health check** (can it read, create, rename and delete here; free space; path length) and plain-English lane rules.
-- **Phone alerts** over Emby itself to the Embidextrous app (no outside service): albums need review, an album failed, a lane has a problem, music was filed, lookups are stuck.
+- **Cover art:** when a filed album has no cover image, its front cover is downloaded from the Cover Art Archive and saved as `cover.jpg` (a switch on the settings page).
+- **Files already in the library:** a person chooses to keep both copies (the new one is numbered), replace the old files (they are kept aside), or file only the new files. Every choice can be undone.
+- **When the album name leads nowhere** (wrong, missing, "Unknown Album"), a few song titles are searched on MusicBrainz and the best album goes to review, never filed by itself.
+- **Classical music, audiobooks and podcasts** are recognized and always wait for you.
+- **Phone alerts and a live status** over Emby itself to the Embidextrous app (no outside service): albums need review, an album failed, a lane has a problem, music was filed, lookups are stuck; the status of every lane for the Library tab.
 
 ## Install
 Install `LabelMaker.dll` from the latest GitHub release with the GitHub Repo Plugin Install plugin, or copy it into Emby's `plugins` folder and restart Emby. A new item **Label Maker** appears under **Advanced** in the dashboard. Step by step: `docs/INSTALL-TRIAL.md`.
