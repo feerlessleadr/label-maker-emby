@@ -1,3 +1,5 @@
+> **Persistent docs (workspace):** read `C:\dev\_docs\WORKSPACE.md` and `STATUS.md` here before starting. Look in `DECISIONS.md` only when a past decision matters; the full history stays in `docs/HANDOFF.md`. The keep-docs-updated rules live in `C:\dev\CLAUDE.md`. **This session must never edit `C:\dev\embidextrous`**: if the phone contract changes, change `docs/NOTIFICATIONS.md` and tell the owner.
+
 # Label Maker (Emby plugin): instructions for Claude
 
 **Start with `docs/HANDOFF.md` section 0** (the current snapshot: state, decisions, what the owner still has to provide, roadmap, how to resume, traps), then `docs/MATCHING-RULES.md` (every rule in plain English: keep it in step with the code), `docs/NOTIFICATIONS.md` (the push contract the Embidextrous session codes against), `docs/PHASE0.md` and `docs/DESIGN.md`.
