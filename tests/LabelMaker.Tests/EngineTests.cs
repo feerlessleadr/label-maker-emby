@@ -77,6 +77,29 @@ namespace LabelMaker.Tests
     public class EngineTests
     {
         [Fact]
+        public void TheStatusVersionGrowsWhenPauseDryRunOrALaneChangesAndOtherwiseStaysPut()
+        {
+            using var rig = new EngineRig();
+            var v0 = rig.Engine.StatusVersion();
+            Assert.Equal(v0, rig.Engine.StatusVersion());
+            Assert.Equal(v0, (long)rig.Engine.Status()["Version"]!);
+
+            rig.Settings.Paused = true;
+            var v1 = rig.Engine.StatusVersion();
+            Assert.True(v1 > v0);
+            Assert.Equal(v1, rig.Engine.StatusVersion());
+
+            rig.Settings.DryRun = !rig.Settings.DryRun;
+            var v2 = rig.Engine.StatusVersion();
+            Assert.True(v2 > v1);
+
+            rig.Settings.Lanes[0].Name = "A new name";
+            var v3 = rig.Engine.StatusVersion();
+            Assert.True(v3 > v2);
+            Assert.Equal(v3, (long)rig.Engine.Status()["Version"]!);
+        }
+
+        [Fact]
         public async Task ADryRunPassMakesTheAlbumReadyTellsNobodyToReviewAndSendsAWouldApply()
         {
             using var rig = new EngineRig();

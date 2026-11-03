@@ -147,7 +147,7 @@ function Send-App($sock, [string]$text) {
   $sock.Ws.SendAsync([ArraySegment[byte]]$b, [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).Wait()
 }
 # Reads for a while; returns the LabelMakerEvents messages (their Data objects) in the order they arrived.
-function Read-App($sock, [int]$seconds) {
+function Read-App($sock, [int]$seconds, [string]$type = 'LabelMakerEvents') {
   $out = New-Object System.Collections.ArrayList
   $end = (Get-Date).AddSeconds($seconds)
   while ((Get-Date) -lt $end) {
@@ -155,7 +155,7 @@ function Read-App($sock, [int]$seconds) {
     if ($sock.Pending.Wait(500)) {
       $res = $sock.Pending.Result; $sock.Pending = $null
       $text = [Text.Encoding]::UTF8.GetString($sock.Buf, 0, $res.Count)
-      try { $m = $text | ConvertFrom-Json; if ($m.MessageType -eq 'LabelMakerEvents') { [void]$out.Add($m.Data) } } catch {}
+      try { $m = $text | ConvertFrom-Json; if ($m.MessageType -eq $type) { [void]$out.Add($m.Data) } } catch {}
     }
   }
   return $out
@@ -253,6 +253,35 @@ try {
   Send-App $noTokenSocket '{"MessageType":"LabelMakerEventsStart","Data":"0,30000,"}'
   $noTokenAnswer = @(Read-App $noTokenSocket 6)
   Check 'A start message with no token is refused' (@($noTokenAnswer).Count -eq 1 -and $noTokenAnswer[0].Error -eq 'Administrator login required.') (($noTokenAnswer | ConvertTo-Json -Compress -Depth 3))
+
+  Write-Host '-- the status channel, the way the app connects'
+  $statusStart = '{"MessageType":"LabelMakerStatusStart","Data":"0,30000,' + $script:Token + '"}'
+  $st = New-AppSocket $script:Token 'lm-status-1'
+  Send-App $st $statusStart
+  $s1 = @(Read-App $st 8 'LabelMakerStatus')
+  Check 'Subscribing to the status answers right away with the status body' ($s1.Count -ge 1 -and $s1[0].ApiLevel -eq 1 -and $s1[0].Counts -and ($s1[0].PSObject.Properties.Name -contains 'Lanes') -and $s1[0].Version -ne $null -and $s1[0].LatestSeq -ne $null -and $s1[0].Service.MusicBrainz) (($s1 | Select-Object -First 1 | ConvertTo-Json -Compress -Depth 3))
+  $statusV0 = [long]$s1[0].Version
+  $null = Api POST '/LabelMaker/Pause' @{ Paused = $true }
+  $s2 = @(Read-App $st 6 'LabelMakerStatus')
+  Check 'A change (Pause) pushes the new status within seconds, with a higher Version' (@($s2 | Where-Object { $_.Paused -eq $true -and [long]$_.Version -gt $statusV0 }).Count -ge 1) (($s2 | ForEach-Object { "$($_.Version)/$($_.Paused)" }) -join ',')
+  $null = Api POST '/LabelMaker/Pause' @{ Paused = $false }
+  $null = Read-App $st 4 'LabelMakerStatus'
+  $s3 = @(Read-App $st 36 'LabelMakerStatus')
+  Check 'A quiet status subscription gets the status again as a heartbeat within about 30 seconds' ($s3.Count -ge 1 -and $s3[0].Counts) ($s3.Count.ToString() + ' messages')
+  Check 'The status pushed to the app carries no folder path' ((($s1 + $s2 + $s3) | ConvertTo-Json -Compress -Depth 6) -notmatch [regex]::Escape($tempRoot))
+  $plainStatus = New-AppSocket $userAuth.AccessToken 'lm-live-user-status'
+  Send-App $plainStatus ('{"MessageType":"LabelMakerStatusStart","Data":"0,30000,' + $userAuth.AccessToken + '"}')
+  $plainStatusAnswer = @(Read-App $plainStatus 6 'LabelMakerStatus')
+  Check 'A signed-in user who is not an administrator is refused the status' (@($plainStatusAnswer).Count -eq 1 -and $plainStatusAnswer[0].Error -eq 'Administrator login required.' -and -not $plainStatusAnswer[0].Counts) (($plainStatusAnswer | ConvertTo-Json -Compress -Depth 3))
+  $junkStatus = New-AppSocket $script:Token 'lm-status-junk'
+  Send-App $junkStatus ('{"MessageType":"LabelMakerStatusStart","Data":"0,30000,' + $junkToken + '"}')
+  $junkStatusAnswer = @(Read-App $junkStatus 6 'LabelMakerStatus')
+  Check 'A token nobody has is refused the status' (@($junkStatusAnswer).Count -eq 1 -and $junkStatusAnswer[0].Error -eq 'Administrator login required.' -and -not $junkStatusAnswer[0].Counts) (($junkStatusAnswer | ConvertTo-Json -Compress -Depth 3))
+  $noTokenStatus = New-AppSocket $script:Token 'lm-status-none'
+  Send-App $noTokenStatus '{"MessageType":"LabelMakerStatusStart","Data":"0,30000,"}'
+  $noTokenStatusAnswer = @(Read-App $noTokenStatus 6 'LabelMakerStatus')
+  Check 'A status start message with no token is refused' (@($noTokenStatusAnswer).Count -eq 1 -and $noTokenStatusAnswer[0].Error -eq 'Administrator login required.')
+  Check 'Info lists the status push' (@((Api GET '/LabelMaker/Info').Features) -contains 'statuspush')
 
   Write-Host '-- a lane, a dry run, and the alerts'
   New-Item -ItemType Directory -Force $inbox, $library | Out-Null

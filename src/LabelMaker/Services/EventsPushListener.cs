@@ -82,33 +82,6 @@ public class EventsPushListener : BasePeriodicWebSocketListener<Dictionary<strin
 		state.Token = token;
 	}
 
-	private static bool IsAdministrator(IWebSocketConnection connection, EventsPushState state)
-	{
-		// A socket Emby's own web UI opened has its user filled in.
-		if (connection.User?.Policy?.IsAdministrator == true)
-		{
-			return true;
-		}
-		if (string.IsNullOrEmpty(state.Token))
-		{
-			return false;
-		}
-		try
-		{
-			string? deviceId = connection.QueryString?["deviceId"];
-			MediaBrowser.Controller.Session.SessionInfo session = Plugin.Instance!.SessionManager.GetSessionByAuthenticationToken(state.Token, deviceId, connection.RemoteAddress, "http");
-			if (session == null)
-			{
-				return false;
-			}
-			return Plugin.Instance!.UserManager.GetUserById(session.UserId)?.Policy?.IsAdministrator == true;
-		}
-		catch (Exception)
-		{
-			return false; // an invalid or expired token is simply not an administrator; nothing about it is logged
-		}
-	}
-
 	protected override Task<Dictionary<string, object?>> GetDataToSend(IWebSocketConnection connection, EventsPushState state, CancellationToken cancellationToken)
 	{
 		// Several start messages on one socket: only the newest subscription answers, so nothing is sent twice.
@@ -132,7 +105,7 @@ public class EventsPushListener : BasePeriodicWebSocketListener<Dictionary<strin
 				}
 			}
 		}
-		bool isAdministrator = IsAdministrator(connection, state);
+		bool isAdministrator = SocketAuth.IsAdministrator(connection, state.Token);
 		try
 		{
 			EventSubscription subscription = state.Subscription ??= new EventSubscription(state.AfterSeq, Interlocked.Read(ref _tick));

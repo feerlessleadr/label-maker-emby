@@ -72,6 +72,9 @@ namespace LabelMaker.Core.Engine
         private string _healthKey = string.Empty;
         private DateTime? _lastPassUtc;
         private long _bump;
+        private readonly object _versionLock = new object();
+        private string _settingsKey = string.Empty;
+        private long _settingsBump;
 
         private sealed class Components
         {
@@ -245,8 +248,34 @@ namespace LabelMaker.Core.Engine
         {
             ["PluginVersion"] = _host.PluginVersion,
             ["ApiLevel"] = EventNames.ApiLevel,
-            ["Features"] = new List<string> { "events", "catalog", "status", "albums", "review" },
+            ["Features"] = new List<string> { "events", "catalog", "status", "albums", "review", "statuspush" },
         };
+
+        /// <summary>The <c>Version</c> of the status, without building the whole status: it grows with every change (the same sum <see cref="Status"/> reports).</summary>
+        public long StatusVersion() => VersionOf(_store.All());
+
+        /// <summary>
+        /// The queue's versions, the alert log, the passes, and what the status shows that does not live in the queue: pause, dry run, the lanes' ids and names,
+        /// and whether MusicBrainz is answering. When one of those differs from the last time the version was asked for, it grows, so a person pausing the
+        /// plugin is a change like any other.
+        /// </summary>
+        private long VersionOf(IReadOnlyCollection<QueueItem> items)
+        {
+            var settings = _host.Settings();
+            var key = (settings.Paused ? "P" : "p") + (settings.DryRun ? "D" : "d") + (_musicBrainz.TroubleSince.HasValue ? "T" : "t")
+                + string.Join(",", settings.Lanes.Select(l => l.Id + ":" + l.Name));
+            long stamp;
+            lock (_versionLock)
+            {
+                if (key != _settingsKey)
+                {
+                    if (_settingsKey.Length > 0) _settingsBump++;
+                    _settingsKey = key;
+                }
+                stamp = _settingsBump;
+            }
+            return items.Sum(i => (long)i.Version) + _events.LatestSeq + Interlocked.Read(ref _bump) + stamp;
+        }
 
         public Dictionary<string, object?> Status()
         {
@@ -267,7 +296,7 @@ namespace LabelMaker.Core.Engine
             return new Dictionary<string, object?>
             {
                 ["ApiLevel"] = EventNames.ApiLevel,
-                ["Version"] = items.Sum(i => (long)i.Version) + _events.LatestSeq + Interlocked.Read(ref _bump),
+                ["Version"] = VersionOf(items),
                 ["ServerTimeUtc"] = _host.UtcNow().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"),
                 ["Paused"] = settings.Paused,
                 ["DryRun"] = settings.DryRun,

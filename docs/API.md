@@ -5,7 +5,7 @@ Plugin 0.1.8.0 (`OnDuplicate` and the duplicate fields of a preview are new in t
 ## Plugin and alerts
 | Route | Answer |
 |---|---|
-| `GET Info` | `{ PluginVersion, ApiLevel, Features: ["events","catalog","status","albums","review"] }` |
+| `GET Info` | `{ PluginVersion, ApiLevel, Features: ["events","catalog","status","albums","review","statuspush"] }` |
 | `GET Status` | `{ ApiLevel, Version, ServerTimeUtc, Paused, DryRun, LastPassUtc, MatchingVersion, Counts, Lanes, Service, LatestSeq }`. `Counts` has `Waiting, NeedsReview, NoMatch, Ready, Applying, Done, Failed, Duplicate, Skipped`. `Lanes[]` is `{ LaneId, LaneName, Counts, Problems: [{ Kind, Message, Blocking }] }`. `Service` is `{ MusicBrainz: "Ok"\|"Trouble", SinceUtc }`. `Version` grows with every change. |
 | `GET Events?After=<seq>&Limit=100` | `{ LatestSeq, Truncated, Events: [{ Seq, Name, AtUtc, Data }] }`, oldest first |
 | `GET Notifications/Catalog` | the alert rules (see NOTIFICATIONS.md section 5) |
