@@ -7,13 +7,19 @@ An Emby plugin that watches music inbox folders, matches albums on MusicBrainz, 
 
 ## Current state
 - Latest release `v0.1.11.0` (2026-11-03, tag on `9c333ab`): the status websocket channel for the app plus a `Status.Version` fix. Releases since the first trial report: 0.1.6.0 (Ready albums filed when dry run is turned off), 0.1.7.0 (cover art), 0.1.8.0 (keep both / replace, later tracks of a filed folder are filed), 0.1.9.0 (song-title search, file only the new files), 0.1.10.0 (classical, audiobook and podcast held for review), 0.1.11.0.
-- `main` equals `origin/main` at `76c0941` (docs commit); `DECISIONS.md` has uncommitted backfilled entries from this session (committing is the owner's call under the workspace rules).
+- `main` equals `origin/main` at `ede13db` (docs commit).
 - 363 unit tests and 70 live checks pass (the live test starts its own private Emby on port 8196). Page files are unchanged since 0.1.9.0.
 - Calibration on 287 real albums: 82% of full albums filed automatically (98% on the right album), 86% of single tracks (99%). Song-title search on 40 albums with the name removed: all 40 reach review, the right album first for 30 (the 10 misses are single songs on many albums).
 - The owner installed it on the production server. On 2026-10-19 they reported dry run found the right match for 1 single and 1 album, and found one bug (fixed in 0.1.6.0). Full trial results are not in.
 
+## Done this session (2026-10-19 to 2026-11-03)
+Released 0.1.6.0 to 0.1.11.0 (see Current state), each on the owner's "publish it", each with the published DLL checked (SHA-256, live test). Fixed two serious bugs on the way: Ready albums not filed after dry run was turned off, and tracks arriving later in an already filed folder never being filed. Rewrote HANDOFF section 0 as a full snapshot, backfilled `DECISIONS.md`, added the workspace entries, committed and pushed (`ede13db`).
+
 ## In progress
-Nothing. Everything on the roadmap is built and released. No leftover test processes or folders.
+Nothing. Everything on the roadmap is built and released. No leftover test processes or folders. Working tree clean, `main` equals `origin/main` at `ede13db`.
+
+## Very next action
+Ask the owner how the production trial is going and what the Ready and review lists show. Do not start new features unasked.
 
 ## Next steps
 1. Fix whatever the owner's production trial shows. Reproduce on a private instance first (`-KeepRunning`), by the owner's path (dashboard sidebar > Advanced > Label Maker).
